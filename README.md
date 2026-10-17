@@ -16,7 +16,7 @@ There are two ways to use it:
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TD
     U([User]) -->|request + email| W[Web app<br/>FastAPI + one page]
     W -->|parse| O[OpenAI<br/>city, dates, budget]
     O -->|confirm card| W
