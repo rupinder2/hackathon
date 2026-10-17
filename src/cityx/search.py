@@ -32,18 +32,37 @@ def _digits_phone(raw: str | None) -> str | None:
 
 
 def geocode_city(city: str) -> tuple[float, float, str]:
-    r = httpx.get(
-        "https://nominatim.openstreetmap.org/search",
-        params={"q": city, "format": "json", "limit": 1},
-        headers=UA,
-        timeout=20,
-    )
-    r.raise_for_status()
-    data = r.json()
+    try:
+        r = httpx.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": city, "format": "json", "limit": 1},
+            headers=UA,
+            timeout=20,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except httpx.HTTPError:
+        # Nominatim blocks or rate-limits shared cloud IPs (it worked locally but not on Render)
+        return _geocode_open_meteo(city)
     if not data:
         raise RuntimeError(f"Could not geocode city: {city}")
     hit = data[0]
     return float(hit["lat"]), float(hit["lon"]), hit.get("display_name", city)
+
+
+def _geocode_open_meteo(city: str) -> tuple[float, float, str]:
+    r = httpx.get(
+        "https://geocoding-api.open-meteo.com/v1/search",
+        params={"name": city.split(",")[0].strip(), "count": 1, "language": "en", "format": "json"},
+        timeout=20,
+    )
+    r.raise_for_status()
+    results = r.json().get("results") or []
+    if not results:
+        raise RuntimeError(f"Could not geocode city: {city}")
+    hit = results[0]
+    label = ", ".join(p for p in (hit.get("name"), hit.get("admin1"), hit.get("country")) if p)
+    return float(hit["latitude"]), float(hit["longitude"]), label or city
 
 
 OVERPASS_ENDPOINTS = (
