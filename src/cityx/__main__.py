@@ -46,7 +46,16 @@ def main() -> None:
     check_p.add_argument("--notify", metavar="EMAIL", help="Email the cheapest available room's booking details here")
     check_p.add_argument("--live", action="store_true", help="Actually place the calls (default: dry run)")
 
+    serve_p = sub.add_parser("serve", help="Run the web app (set LIVE_CALLS=1 to place real calls)")
+    serve_p.add_argument("--host", default="127.0.0.1")
+    serve_p.add_argument("--port", type=int, default=8000)
+
     args = parser.parse_args()
+    if args.cmd == "serve":
+        import uvicorn
+
+        uvicorn.run("cityx.web:app", host=args.host, port=args.port)
+        return
     settings = Settings()
     stay = _stay(args, settings)
     if not stay.city:

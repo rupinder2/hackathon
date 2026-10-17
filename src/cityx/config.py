@@ -15,7 +15,7 @@ def _env(name: str, default: str = "") -> str:
 @dataclass(frozen=True)
 class Settings:
     bland_api_key: str = _env("BLAND_API_KEY")
-    guest_name: str = _env("GUEST_NAME", "Alex Chen")
+    guest_name: str = _env("GUEST_NAME", "Rupinder")
     guest_phone: str = _env("GUEST_PHONE")
     receipt_email: str = _env("RECEIPT_EMAIL")
     card_note: str = _env("GUEST_CARD_NOTE", "Guarantee at check-in if a card is required.")
@@ -38,6 +38,9 @@ class Settings:
     voice_provider: str = _env("VOICE_PROVIDER", "bland")
     max_hotels_to_try: int = int(_env("MAX_HOTELS_TO_TRY", "5") or "5")
 
+    openai_api_key: str = _env("OPENAI_API_KEY") or _env("OPEN_AI_API_KEY")
+    parse_model: str = _env("PARSE_MODEL", "gpt-5.4-mini")
+    live_calls: bool = _env("LIVE_CALLS") in {"1", "true", "yes"}
     smtp_host: str = _env("SMTP_HOST", "smtp.gmail.com")
     smtp_user: str = _env("SMTP_USER") or _env("GMAIL_SMTP_USER") or _env("IMAP_USER")
     smtp_password: str = (
