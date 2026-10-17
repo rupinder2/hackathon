@@ -54,6 +54,89 @@ def fixture_rows(city: str, currency: str) -> list[dict]:
     ]
 
 
+TOP_CHEAPEST = 3
+EARLY_BAND = 30  # a quote within this much of the cheapest listed price still being called is emailed at once
+EARLY_GRACE_S = 45  # a quote from outside the top 3 is emailed this long after it arrives, if no top-3 hotel has quoted
+
+
+class EarlyQuote:
+    """Decides which confirmed quote gets the early email: the first to confirm a room among the cheapest few.
+
+    `tops()` returns the phones of the hotels listed cheapest. If every one of them has finished without
+    a room (sold out or a failed call), or `grace_s` seconds pass after the first quote from any other hotel,
+    that quote is sent instead. At most one `send` happens.
+    """
+
+    def __init__(self, tops, send, grace_s: float = EARLY_GRACE_S, floor=None, band: float = EARLY_BAND, ready=None) -> None:
+        self._tops, self._send, self._grace = tops, send, grace_s
+        self._ready = ready or (lambda: True)  # false while the search may still add cheaper candidates
+        self._floor, self._band = floor, band  # floor(done) = cheapest listed price among hotels still unfinished
+        self._timer: threading.Timer | None = None
+        self._lock = threading.Lock()
+        self._done: set[str] = set()  # top hotels whose call has ended
+        self._fallback = None  # first quote from a hotel outside the top
+        self.sent = False
+
+    def result(self, av) -> None:
+        phone = av.hotel.phone
+        quote = av.available and av.total_price is not None
+        with self._lock:
+            self._done.add(phone)
+            if not quote:
+                pick = self._check()
+            elif phone in self._tops() or self._close_enough(av):
+                pick = av
+            else:
+                if self._fallback is None:
+                    self._fallback = av
+                    self._timer = threading.Timer(self._grace, self._flush)
+                    self._timer.daemon = True
+                    self._timer.start()
+                pick = self._check()
+            if pick is None or self.sent:
+                return
+            self.sent = True
+        self._send(pick)
+
+    def _close_enough(self, av) -> bool:
+        """No hotel still to answer is listed more than the band below this quote (lock held)."""
+        if self._floor is None or not self._ready():
+            return False
+        left = self._floor(self._done)
+        return left is None or av.total_price <= left + self._band
+
+    def _flush(self) -> None:
+        with self._lock:
+            if self.sent or self._fallback is None:
+                return
+            self.sent = True
+            pick = self._fallback
+        self._send(pick)
+
+    def close(self) -> None:
+        """The calls are over: the final email covers everything, so no early one may follow."""
+        with self._lock:
+            self.sent = True
+            if self._timer:
+                self._timer.cancel()
+
+    def event(self, event: dict) -> None:
+        if event.get("state") != "failed":  # ok / no_room arrive through result()
+            return
+        with self._lock:
+            self._done.add(event["phone"])
+            pick = None if self.sent else self._check()
+            if pick is None:
+                return
+            self.sent = True
+        self._send(pick)
+
+    def _check(self):
+        """The fallback quote, once every top hotel has finished (lock held)."""
+        tops = self._tops()
+        return self._fallback if tops and tops <= self._done and self._ready() else None
+
+
 def mask_phone(phone: str | None) -> str:
     digits = "".join(c for c in (phone or "") if c.isdigit())
     return f"***-***-{digits[-4:]}" if len(digits) >= 4 else ""
@@ -224,7 +307,7 @@ def _run(job: Job, settings: Settings) -> None:
             else:
                 seen_phones.add(r.get("phone"))
                 fresh.append(r)
-        report = validate_hotels(fresh, i, settings, query=job.query or "", on_progress=job.log, usage=job.usage)
+        report = validate_hotels(fresh, i, settings, query=job.query or "", on_progress=job.log, usage=job.usage, ai_review=False)
         good = report.valid
         if settings.call_limit:  # test mode: dial only the first few, optionally at a planted number
             good = good[: max(settings.call_limit - len(valid), 0)]
@@ -290,13 +373,18 @@ def _run(job: Job, settings: Settings) -> None:
 
     searcher = threading.Thread(target=search, daemon=True)
     searcher.start()
-    early = threading.Lock()  # the first confirmed quote is emailed right away, once
+    def email_early_quote(av) -> None:
+        try:
+            _email_early_quote(av)
+        except Exception as e:  # run_calls swallows hook errors, so say what went wrong
+            job.log(f"Early email FAILED: {type(e).__name__}: {e}")
+            raise
 
-    def email_first_quote(av) -> None:
-        if not (live and settings.can_email and av.available and av.total_price is not None):
+    def _email_early_quote(av) -> None:
+        if not settings.can_email:
+            job.log("Early email skipped: email is not set up on the server")
             return
-        if not early.acquire(blocking=False):
-            return
+        job.log(f"Sending the first quote ({av.hotel.name}) to {job.email}")
         msg = build_email(
             stay, [av], job.email, settings.smtp_user, settings.team_number,
             audio=fetch_audio(av.conversation_id, settings),
@@ -305,6 +393,27 @@ def _run(job: Job, settings: Settings) -> None:
         send_email(msg, settings)
         job.log(f"Emailed the first quote ({av.hotel.name}, {av.total_price:.0f} {i.currency}) to {job.email}")
 
+    def cheapest_listed() -> set[str]:
+        pool = [r for r in list(valid)[:call_cap] if r.get("price_value") is not None]
+        return {r["phone"] for r in sorted(pool, key=lambda r: r["price_value"])[:TOP_CHEAPEST]}
+
+    def cheapest_unfinished(done: set[str]) -> float | None:
+        left = [r["price_value"] for r in list(valid)[:call_cap] if r["phone"] not in done and r.get("price_value") is not None]
+        return min(left, default=None)
+
+    early = EarlyQuote(
+        cheapest_listed, email_early_quote, floor=cheapest_unfinished,
+        ready=lambda: feed.closed or len(valid) >= call_cap,
+    )
+
+    def on_event(event: dict) -> None:
+        job.on_event(event)
+        early.event(event)
+
+    def on_result(av) -> None:
+        if live:  # demo calls are simulated and send no email
+            early.result(av)
+
     def counted_call(*args, **kwargs):
         av = call_hotel(*args, **kwargs)
         job.usage.add_conversation(av.raw)  # every attempt counts, including the ones that fail
@@ -312,9 +421,10 @@ def _run(job: Job, settings: Settings) -> None:
 
     try:
         results = run_calls(
-            stay, feed, settings, live=live, on_event=job.on_event, on_result=email_first_quote, call_fn=counted_call
+            stay, feed, settings, live=live, on_event=on_event, on_result=on_result, call_fn=counted_call
         )
     finally:
+        early.close()
         stop.set()  # enough hotels were called; don't spend more SearchAPI lookups
         searcher.join()
         valid_phones = {r["phone"] for r in valid}

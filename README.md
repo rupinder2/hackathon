@@ -13,6 +13,29 @@ There are two ways to use it:
 | **Web app / `cityx check`** | Phones up to 10 hotels **at once** to confirm availability and the all-in price, then emails the cheapest option with everything needed to book. | ElevenLabs agent |
 | **`cityx book`** | Original flow: calls hotels one at a time and books the first that says yes, then watches IMAP for the receipt. | Bland |
 
+## Architecture
+
+```mermaid
+flowchart LR
+    U([User]) -->|request + email| W[Web app<br/>FastAPI + one page]
+    W -->|parse| O[OpenAI<br/>city, dates, budget]
+    O -->|confirm card| W
+    W -->|job| P[Pipeline]
+    P -->|search| S[SearchAPI<br/>Google Hotels]
+    S -->|hotels with phone + price| V[Local checks<br/>phone, price, city]
+    V -->|cheapest first, as they arrive| D[Dispatcher<br/>10 calls at once]
+    D -->|outbound calls| E[ElevenLabs agent<br/>+ Twilio number]
+    E -->|calls| H([Hotel front desks])
+    E -->|quote: room, price, terms| D
+    D -->|first good quote| M1[Early email]
+    D -->|all calls done| M2[Final email<br/>every call]
+    M1 --> G[Gmail SMTP]
+    M2 --> G
+    G --> U
+```
+
+The search and the calls overlap: each hotel goes to the dialer as soon as its phone number is found, so calling starts while the search carries on. The original `cityx book` flow (Bland, one call at a time) lives beside this and is not shown.
+
 ## Quick start
 
 ```bash
@@ -32,11 +55,20 @@ LIVE_CALLS=1 cityx serve --port 8000     # real calls to up to 10 hotels, then e
 Open http://localhost:8000.
 
 1. The user types a request and their email, e.g. *"2 nights in Montreal from Oct 25, two of us, max $150 a night"*.
-2. An OpenAI model (`PARSE_MODEL`, default `gpt-5.4-mini`, about 1 s) extracts city, dates, guests and budget. A per-night budget is converted to a stay total.
+2. An OpenAI model (`PARSE_MODEL`, default `gpt-5.4-mini`, about 1 s) extracts city, dates, guests and budget. The city comes back in full ("Halifax, Nova Scotia, Canada") so the search cannot land in a different place with the same name. A per-night budget is converted to a stay total.
 3. If the request is unclear (no city, no dates, past dates, off-topic, bad email) the page replies with a friendly prompt instead of an error.
-4. The page shows what it understood. On confirm, the server searches hotels, calls them in parallel, and emails the cheapest available room to the user's address.
+4. The page shows what it understood. **Check the city and the email address before confirming**: the email box is pre-filled from the last address used in your browser.
+5. On confirm, the server searches Google Hotels through SearchAPI, cheapest first. Only hotels in the requested city count; suburbs are dropped. Each hotel is opened for its phone number, and as soon as one has a phone and a price it goes to the dialer, so calls start while the search is still running.
+6. Up to 10 calls run at once. A failed call (no answer, voicemail, dropped, API error) is retried once, then replaced by the next-cheapest hotel. "No rooms" is a valid answer and is not retried.
+7. Two emails go to the address typed on the page:
+   - **Early email**, once. It goes to the first of the 3 cheapest-listed hotels to confirm a room; or to any hotel whose quote is within $30 of the cheapest hotel still to answer; or, if the three cheapest all finish without a room, to the first quote from anyone; or 45 seconds after the first outside quote if nothing else has triggered. It waits until the candidate list is complete so a cheaper hotel found a moment later is not missed.
+   - **Final email**, when all calls end: the cheapest confirmed room, with every other option below it.
 
 Safeguards: the server re-validates every request, allows one running search per email and three at once, and only places calls or sends mail when `LIVE_CALLS=1`. There is no login or rate limit, so do not expose it publicly as is.
+
+Each finished job appends a line to `logs/runs.jsonl` with timings, OpenAI and ElevenLabs token counts, and ElevenLabs cost. SearchAPI credits are not counted. Searches are saved to `data/searches/` (gitignored); if SearchAPI fails for a city with no results yet, the app falls back to the newest saved search for that city.
+
+Run settings are read when the server starts, so restart it after editing `.env`. Set `CALL_LIMIT=3` to dial only a few hotels, and `CALL_PHONE_OVERRIDE=+1…` to send those calls to a number you own.
 
 ## Parallel availability check (CLI)
 
@@ -75,6 +107,18 @@ VOICE_PROVIDER=dry_run cityx search --city Toronto                   # preview i
 
 ## How hotels are found and ranked
 
+**Web app (`cityx serve`, `cityx find`)**
+
+1. **Search** Google Hotels through SearchAPI (`SEARCHAPI_API_KEY`), sorted by lowest price. The query is the full place name from the parse step.
+2. **Drop other cities** using the `city` Google lists for each property, before spending a phone lookup on them. Ignored if Google's values don't match the requested city, so a surprise in the data cannot empty the search.
+3. **Open each property** (4 at a time, SearchAPI returns 429 above that) for its phone number and address. Prices are always for the whole stay, tax-included when Google shows it. Rows with no phone or no price are skipped.
+4. **Local checks** on every row: valid, unique phone number; a price; address in the requested city (suburbs are rejected); not too far from the centre. Over-budget hotels are flagged, not dropped.
+5. **Order for dialing**: cheapest first, except that a closer hotel within $30 of the cheapest goes ahead of it.
+
+An optional OpenAI review of the results exists (`validate_hotels(..., ai_review=True)`) but is switched off in the web app, because it would delay the first call.
+
+**`cityx book` / `cityx check`**
+
 1. **Geocode** City X with Nominatim (free, no key).
 2. **Pull hotels with phone numbers** from OpenStreetMap Overpass (free, no key).
 3. **Optional live rates** from the Amadeus test sandbox if `AMADEUS_CLIENT_ID` / `SECRET` are set.
@@ -87,6 +131,7 @@ Put these in `.env` (see `.env.example`). Lowercase names also work.
 | Key | Needed for | Notes |
 | --- | --- | --- |
 | `ELEVENLABS_API_KEY` | `check`, web app | Agent and phone-number ids default to this project's |
+| `SEARCHAPI_API_KEY` | web app search | Google Hotels results. When the monthly quota is gone, searches fail with a 429 |
 | `OPENAI_API_KEY` | web app | Parses the user's request. `PARSE_MODEL` overrides the model |
 | `GMAIL_SMTP_USER` + `GMAIL_SMTP_PASSWORD` | emailing booking details | Must be a 16-letter **app password**. A normal password or an API key will not work |
 | `LIVE_CALLS=1` | web app placing real calls | Leave unset for demo mode |

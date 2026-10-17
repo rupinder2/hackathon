@@ -17,7 +17,8 @@ import re
 import statistics
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+import unicodedata
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -83,7 +84,19 @@ def search_deals(
         cap = limit if limit is not None else (want * 3 if want else None)
         props = _list_properties(client, settings, city, check_in, check_out, adults, currency, cap)
         nights = _nights(check_in, check_out)
-        center = center or _city_center(city, props, say)
+        geo = None
+        if center is None:
+            try:
+                geo = geocode_city(city)
+            except Exception:
+                pass
+            # Google guesses for a bare name ("Halifax" gave Calgary and Toronto hotels): ask again with the region
+            if geo and _off_target(geo, props) and _same_place(city, geo[2]) and "," not in city:
+                qualified = _qualified(geo[2])
+                say(f"Google returned hotels far from {city}; searching again as {qualified}")
+                props = _list_properties(client, settings, qualified, check_in, check_out, adults, currency, cap)
+        center = center or _city_center(city, props, say, geo)
+        props = _in_city(props, city, say)
         props = _within_range(props, center, nights, say)
         say(f"Google Hotels returned {len(props)} properties within {MAX_KM} km; looking up phone numbers")
 
@@ -130,18 +143,33 @@ def search_deals(
 
         rows: list[dict] = []
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-            # Google lists cheapest first, so open properties in chunks and stop once there are enough
-            step = MAX_WORKERS * 2
-            for i in range(0, len(props), step):
-                if stop is not None and stop.is_set():
-                    break
-                batch = [r for r in pool.map(one, props[i : i + step]) if r]
-                _annotate(batch, props, nights, center)
-                rows += batch
-                if batch and on_rows:
-                    on_rows(batch)
+            # Rolling window: a slow lookup no longer holds up the next one, and we stop once there are enough.
+            # Google lists cheapest first, so submitting in order keeps results roughly cheapest first.
+            pending: set = set()
+            queue = iter(props)
+
+            def fill() -> None:
+                while len(pending) < MAX_WORKERS and not (stop is not None and stop.is_set()):
+                    prop = next(queue, None)
+                    if prop is None:
+                        return
+                    pending.add(pool.submit(one, prop))
+
+            fill()
+            while pending:
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                pending -= done
+                batch = [r for r in (f.result() for f in done) if r]
+                if batch:
+                    _annotate(batch, props, nights, center)
+                    rows += batch
+                    if on_rows:
+                        on_rows(batch)
                 if want is not None and len(rows) >= want:
+                    for f in pending:
+                        f.cancel()
                     break
+                fill()
     finally:
         if own:
             client.close()
@@ -170,11 +198,30 @@ def proximity_order(rows: list[dict], band: float = PRICE_BAND) -> list[dict]:
     return out + sorted((r for r in pool if r.get("price_value") is None), key=km)
 
 
-def _city_center(city: str, props: list[dict], say: Progress) -> tuple[float, float] | None:
+def _cluster(props: list[dict]) -> tuple[float, float] | None:
     pts = [c for c in map(_coords, props) if c]
-    cluster = (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts)) if len(pts) >= 3 else None
+    return (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts)) if len(pts) >= 3 else None
+
+
+def _off_target(geo: tuple[float, float, str], props: list[dict]) -> bool:
+    cluster = _cluster(props)
+    return bool(cluster and _km((geo[0], geo[1]), cluster) > MAX_KM)
+
+
+def _same_place(city: str, display_name: str) -> bool:
+    """The geocoder found the place that was typed, not a fuzzy match for a typo ("Vancover" -> Las Vegas)."""
+    return display_name.split(",")[0].strip().casefold() == city.strip().casefold()
+
+
+def _qualified(display_name: str) -> str:
+    parts = [x.strip() for x in display_name.split(",")]
+    return ", ".join([parts[0], *parts[-2:]]) if len(parts) > 2 else display_name
+
+
+def _city_center(city: str, props: list[dict], say: Progress, geo: tuple[float, float, str] | None = None) -> tuple[float, float] | None:
+    cluster = _cluster(props)
     try:
-        lat, lon, _ = geocode_city(city)
+        lat, lon, _ = geo or geocode_city(city)
     except Exception as e:  # Nominatim down or no match: fall back to where the hotels cluster
         say(f"Could not geocode {city} ({type(e).__name__}); using the middle of the hotel list")
         return cluster
@@ -183,6 +230,29 @@ def _city_center(city: str, props: list[dict], say: Progress) -> tuple[float, fl
         say(f"Geocoded {city} is far from the hotels Google returned; using the middle of the hotel list")
         return cluster
     return lat, lon
+
+
+def _in_city(props: list[dict], city: str, say: Progress) -> list[dict]:
+    """Drop properties Google files under another city, before spending a lookup on them.
+
+    Ignored when no property carries a matching `city` (the field is missing or formatted differently),
+    so a surprise in Google's data cannot empty the search.
+    """
+    want = _norm_city(city.split(",")[0])
+    named = [p for p in props if p.get("city")]
+    if not want or not any(_norm_city(p["city"]) == want for p in named):
+        return props
+    kept = []
+    for p in props:
+        if p.get("city") and _norm_city(p["city"]) != want:
+            say(f"{p.get('name')}: skipped, listed in {p['city']}")
+        else:
+            kept.append(p)
+    return kept
+
+
+def _norm_city(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", s or "") if not unicodedata.combining(c)).casefold().strip()
 
 
 def _within_range(props: list[dict], center: tuple[float, float] | None, nights: int, say: Progress) -> list[dict]:

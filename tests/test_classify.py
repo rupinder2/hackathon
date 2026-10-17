@@ -70,3 +70,13 @@ def test_call_hotel_api_error(monkeypatch):
     monkeypatch.setattr(av_mod.httpx, "post", lambda url, **kw: httpx.Response(500, text="no", request=httpx.Request("POST", url)))
     res = call_hotel(stay, H, s)
     assert classify(res) == "failed"
+
+
+def test_poll_survives_rate_limits_instead_of_failing_the_call(monkeypatch):
+    import httpx
+    from cityx import availability
+
+    replies = iter([httpx.Response(429), httpx.Response(503), httpx.Response(200, json={"status": "done"}, request=httpx.Request("GET", "https://x"))])
+    monkeypatch.setattr(availability.httpx, "get", lambda *a, **k: next(replies))
+    monkeypatch.setattr(availability.time, "sleep", lambda s: None)
+    assert availability._poll_conversation("c1", {}, timeout_s=60)["status"] == "done"

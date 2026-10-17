@@ -146,9 +146,9 @@ def test_on_rows_streams_batches_and_stop_ends_lookups():
         "X", "2026-11-01", "2026-11-02", 2, "CAD", S, want=None, on_rows=on_rows, stop=stop,
         client=_client(_handler({None: {"properties": props}}, details, calls)),
     )
-    assert batches == [[f"H{i}" for i in range(deals.MAX_WORKERS * 2)]]
-    assert len(rows) == len(batches[0])
-    assert sum(c["engine"] == "google_hotels_property" for c in calls) == deals.MAX_WORKERS * 2
+    # rolling window: at most MAX_WORKERS lookups are in flight when stop is set
+    assert batches and len(rows) == sum(map(len, batches))
+    assert sum(c["engine"] == "google_hotels_property" for c in calls) <= deals.MAX_WORKERS
 
 
 def _r(name, price, km):
@@ -243,3 +243,41 @@ def test_stop_event_cuts_a_retry_wait_short(monkeypatch):
     stop.set()  # an already-stopped search never makes the request
     with pytest.raises(deals.SearchStopped):
         deals._get(_client(lambda req: pytest.fail("should not be called")), {}, stop)
+
+
+def test_bare_city_is_requeried_with_region_when_google_guesses_wrong(monkeypatch):
+    monkeypatch.setattr(deals, "geocode_city", lambda c: (44.65, -63.58, "Halifax, Halifax Regional Municipality, Nova Scotia, Canada"))
+    calls = []
+
+    def h(req: httpx.Request):
+        q = dict(req.url.params)
+        calls.append(q)
+        if q["engine"] == "google_hotels":
+            lat, lon = (44.65, -63.58) if "Nova Scotia" in q["q"] else (51.05, -114.07)  # Calgary for a bare "Halifax"
+            return httpx.Response(200, json={"properties": [{**_prop(str(i), f"H{i}", 100 + i), **_gps(lat, lon)} for i in range(3)]})
+        return httpx.Response(200, json={"property": {"phone": "9025550100"}})
+
+    rows = deals.search_deals("Halifax", "2026-11-01", "2026-11-02", 2, "CAD", S, client=_client(h))
+    assert [c["q"] for c in calls if c["engine"] == "google_hotels"] == ["Halifax", "Halifax, Nova Scotia, Canada"]
+    assert len(rows) == 3 and all(r["km_from_center"] < 5 for r in rows)
+
+
+def test_properties_listed_in_other_cities_are_skipped_before_lookup():
+    props = [
+        {**_prop("a", "In", 100), "city": "Halifax"},
+        {**_prop("b", "Suburb", 90), "city": "Dartmouth"},
+    ]
+    calls, msgs = [], []
+    details = {"a": {"phone": "9025550100"}, "b": {"phone": "9025550101"}}
+    rows = deals.search_deals("Halifax, Nova Scotia, Canada", "2026-11-01", "2026-11-02", 2, "CAD", S,
+                              on_progress=msgs.append, client=_client(_handler({None: {"properties": props}}, details, calls)))
+    assert [r["name"] for r in rows] == ["In"]
+    assert [c["property_token"] for c in calls if c["engine"] == "google_hotels_property"] == ["a"]
+    assert any("Suburb: skipped, listed in Dartmouth" in m for m in msgs)
+
+
+def test_unmatched_city_field_is_ignored():
+    props = [{**_prop("a", "A", 100), "city": "CA"}]
+    rows = deals.search_deals("Halifax", "2026-11-01", "2026-11-02", 2, "CAD", S,
+                              client=_client(_handler({None: {"properties": props}}, {"a": {"phone": "9025550100"}})))
+    assert len(rows) == 1

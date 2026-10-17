@@ -60,9 +60,12 @@ def validate_hotels(
     review: Reviewer | None = None,
     on_progress: Callable[[str], None] | None = None,
     usage: Usage | None = None,
+    ai_review: bool = True,
 ) -> ValidationReport:
     say = on_progress or (lambda _m: None)
     survivors, rejected = deterministic_filter(rows, intent)
+    if not ai_review:  # callers that must not wait on a network round trip
+        return ValidationReport(valid=survivors, rejected=rejected)
     if survivors and (review or settings.openai_api_key):
         try:
             survivors, llm_rejected = _llm_filter(survivors, intent, settings, query, review or partial(_openai_review, usage=usage))
@@ -90,6 +93,8 @@ def deterministic_filter(rows: list[dict], intent: Intent) -> tuple[list[dict], 
             rejected.append({"row": row, "reason": "no price"})
         elif phone in seen:
             rejected.append({"row": row, "reason": "duplicate phone number"})
+        elif (other := _other_city(row.get("address"), city_key)) is not None:
+            rejected.append({"row": row, "reason": f"address is in {other}, not {intent.city.split(',')[0].strip()}"})
         elif _wrong_place(row.get("address"), city_key, want_region or home_region):
             rejected.append({"row": row, "reason": "address is outside the requested city"})
         elif (row.get("km_from_center") or 0) > MAX_KM_FROM_CENTER:
@@ -189,6 +194,18 @@ def _region_of_query(city: str) -> str | None:
         return None
     part = city.split(",", 1)[1].strip()
     return part.upper() if re.fullmatch(r"[A-Za-z]{2}", part) else _PROVINCES.get(_norm(part))
+
+
+_ADDRESS_CITY_RE = re.compile(r",\s*([^,]+?),\s*[A-Z]{2}\s+(?:[A-Z]\d[A-Z]|\d{5})")
+
+
+def _other_city(address: str | None, city_key: str) -> str | None:
+    """The city an address names when it is not the requested one (suburbs count as other cities)."""
+    m = _ADDRESS_CITY_RE.search(address or "")
+    if not m or not city_key:
+        return None
+    found = m.group(1).strip()
+    return None if _norm(found) == city_key else found
 
 
 def _wrong_place(address: str | None, city_key: str, region: str | None) -> bool:

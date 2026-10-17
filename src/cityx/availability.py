@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import random
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -176,7 +177,17 @@ def _poll_conversation(
     deadline = time.time() + timeout_s
     last = None
     while True:
-        r = httpx.get(f"{API}/conversations/{conversation_id}", headers=headers, timeout=20)
+        try:
+            r = httpx.get(f"{API}/conversations/{conversation_id}", headers=headers, timeout=20)
+        except httpx.TransportError:
+            r = None
+        if r is None or r.status_code == 429 or r.status_code >= 500:
+            # Many calls poll at once and ElevenLabs rate-limits that. The call itself is fine, so keep waiting
+            # for its result instead of failing (a failure would place a second, paid call to the same hotel).
+            if time.time() > deadline:
+                return {"timed_out": True}
+            time.sleep(interval_s * 2 + random.uniform(0, interval_s))
+            continue
         r.raise_for_status()
         data = r.json()
         status = data.get("status")

@@ -73,7 +73,7 @@ def _extract(text: str, settings: Settings, today: date, usage: Usage | None = N
         "Resolve relative dates ('tonight' = today, 'tomorrow', 'this Friday', 'next weekend') "
         "to YYYY-MM-DD. If only a check-in date or a number of nights is given, compute check_out; "
         "if only one night is implied, check_out is the next day. Leave a field null if the user did "
-        "not say it; never guess a city. city is the place name, adding region/country if stated. "
+        "not say it; never guess a city. city is the place name always written in full as 'City, Province/State, Country' (for example 'Halifax, Nova Scotia, Canada'), so the search cannot land in a different place with the same name; if the user gives no region, pick the most likely one, preferring Canada, and keep the user's region if they gave one. "
         "budget is the most the user wants to pay, as a number; budget_basis says whether it is for "
         "the 'total' stay or 'per_night'. currency is an ISO code only if the user names one (USD, euros, £); a bare $ is ambiguous, so leave it null. "
         "is_hotel_request is false if the message is not about finding a hotel room."

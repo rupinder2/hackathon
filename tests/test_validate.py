@@ -24,14 +24,18 @@ def test_deterministic_filters():
         row("NoAddr", "416-555-0005", 95, None),
     ]
     kept, rejected = deterministic_filter(rows, I)
-    assert [r["name"] for r in kept] == ["NoAddr", "A", "Suburb"]
+    assert [r["name"] for r in kept] == ["NoAddr", "A"]
     reasons = {x["row"]["name"]: x["reason"] for x in rejected}
     assert reasons["Dupe pricier"] == "duplicate phone number"
     assert reasons["NoPhone"] == reasons["Short"] == "no valid phone number"
     assert reasons["NoPrice"] == "no price"
-    assert "outside" in reasons["Vancouver"]
-    over = {r["name"]: r["over_budget"] for r in kept}
-    assert over == {"NoAddr": False, "A": False, "Suburb": True}  # flagged, not dropped
+    assert "Vancouver, not Toronto" in reasons["Vancouver"]
+    assert "Mississauga, not Toronto" in reasons["Suburb"]  # only the requested city, no suburbs
+
+
+def test_over_budget_is_flagged_not_dropped():
+    kept, _ = deterministic_filter([row("Pricey", "416-555-0001", 200), row("Fine", "416-555-0002", 100)], I)
+    assert {r["name"]: r["over_budget"] for r in kept} == {"Pricey": True, "Fine": False}
 
 
 def test_accent_insensitive_city():
