@@ -207,3 +207,39 @@ def test_429_backoff_grows_and_is_capped(monkeypatch):
     monkeypatch.setattr(deals.random, "uniform", lambda a, b: 0)
     assert [deals._backoff(i) for i in range(4)] == [1.5, 3.0, 6.0, 12.0]
     assert deals._backoff(10) == deals.MAX_BACKOFF
+
+
+def test_negative_or_zero_retry_after_falls_back_to_backoff():
+    for value in ("-1", "0", "soon"):
+        assert deals._retry_after(httpx.Response(429, headers={"Retry-After": value})) is None
+    assert deals._retry_after(httpx.Response(429, headers={"Retry-After": "999"})) == deals.MAX_BACKOFF
+
+
+def test_5xx_also_starts_the_shared_cooldown(monkeypatch):
+    monkeypatch.setattr(deals.time, "sleep", lambda s: None)
+    monkeypatch.setattr(deals.random, "uniform", lambda a, b: 0)
+    monkeypatch.setitem(deals._cooldown, "until", 0.0)
+    n = {"c": 0}
+
+    def h(req):
+        n["c"] += 1
+        return httpx.Response(503 if n["c"] == 1 else 200, json={"ok": 1})
+
+    assert deals._get(_client(h), {}) == {"ok": 1}
+    assert deals._cooldown["until"] > deals.time.monotonic()
+
+
+def test_stop_event_cuts_a_retry_wait_short(monkeypatch):
+    import threading
+    import time
+
+    monkeypatch.setitem(deals._cooldown, "until", time.monotonic() + 30)
+    stop = threading.Event()
+    threading.Timer(0.05, stop.set).start()
+    started = time.monotonic()
+    with pytest.raises(deals.SearchStopped):
+        deals._get(_client(lambda req: httpx.Response(200, json={})), {}, stop)
+    assert time.monotonic() - started < 2
+    stop.set()  # an already-stopped search never makes the request
+    with pytest.raises(deals.SearchStopped):
+        deals._get(_client(lambda req: pytest.fail("should not be called")), {}, stop)

@@ -40,3 +40,9 @@ def test_job_metrics_track_phases_and_first_quote():
     assert m["phases"] == {"searching": 0.0, "calling": 12.5}
     assert m["first_quote_s"] == round(job.first_quote_at - 1000.0, 1)
     assert m["elapsed_s"] == round(job.finished_at - 1000.0, 1)
+
+
+def test_conversation_without_metadata_is_not_counted_as_a_call():
+    u = Usage()
+    u.add_conversation({"error": "agent not configured"})
+    assert u.snapshot()["voice"]["calls"] == 0

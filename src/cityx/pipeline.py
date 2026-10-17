@@ -22,6 +22,7 @@ from .notify import build_email, fetch_audio, send_email
 from .validate_results import validate_hotels
 
 HOTELS_TO_CALL = 10
+_run_log_lock = threading.Lock()
 RUN_LOG = Path("logs/runs.jsonl")  # one line per finished run: time, tokens, outcome
 
 FIXTURE_HOTELS = [
@@ -171,7 +172,7 @@ def _log_run(job: Job) -> None:
         RUN_LOG.parent.mkdir(parents=True, exist_ok=True)
         line = {"job": job.id, "city": job.intent.city, "live": job.live, "status": job.status,
                 "validated": job.validated_total, "best": job.best, **job.metrics()}
-        with RUN_LOG.open("a") as f:
+        with _run_log_lock, RUN_LOG.open("a") as f:
             f.write(json.dumps(line) + "\n")
     except OSError:
         pass

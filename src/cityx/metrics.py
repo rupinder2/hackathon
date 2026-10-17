@@ -23,6 +23,8 @@ class Usage:
     def add_conversation(self, data: dict[str, Any] | None) -> None:
         """One ElevenLabs conversation payload: duration, LLM tokens and cost live under `metadata`."""
         meta = (data or {}).get("metadata") or {}
+        if not meta:  # the call never started (API error, not configured): nothing was consumed
+            return
         charging = meta.get("charging") or {}
         # "irreversible" is what the agent actually generated and was billed for
         by_model = ((charging.get("llm_usage") or {}).get("irreversible_generation") or {}).get("model_usage") or {}

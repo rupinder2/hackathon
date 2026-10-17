@@ -253,7 +253,7 @@ function mailArt() {
 }
 
 /* ---------- flow ---------- */
-const PHASE_ORDER = ["searching", "validating", "calling", "emailing", "done"];
+const PHASE_ORDER = ["searching", "calling", "emailing", "done"];
 let stages = {}, rows = new Map(), lastHero = "", shownLists = {};
 
 function stage(key, eyebrow, art) {
@@ -276,7 +276,7 @@ function renderSearch(j) {
   const city = parsed ? parsed.city : "your city";
   if (!j.search_total) { s._.big.textContent = `Scanning ${city}…`; s._.sub.textContent = "Looking for stays with a front-desk phone number."; return; }
   s._.big.textContent = `${j.search_total} stays found in ${city}`;
-  s._.sub.textContent = j.phase === "searching" || j.phase === "validating"
+  s._.sub.textContent = j.phase === "searching"
     ? `${j.validated_total} passed checks so far…`
     : `${j.validated_total} passed checks · calling the ${Math.min(10, j.validated_total)} cheapest`;
   fillList(s._.extra, "all", "Search results", j.results, (r) => r.listed_price || "");
@@ -360,20 +360,21 @@ function renderCalls(j) {
     if (r._.state !== a.state) { r._.state = a.state; r._.ico.innerHTML = MINI[a.state] || MINI.queued; }
     r._.nm.textContent = `#${a.slot + 1} ${a.name}`; r._.nt.textContent = noteText(a) || "\u00a0"; r._.lab.textContent = chipText(a);
   }
-  if (j.phase !== "calling" && j.phase !== "searching" && j.phase !== "validating") { finish("calls"); s._.over.replaceChildren(el("div", "hero-name", "All calls complete"), el("div", "hero-sub", `${cnt("ok")} with a price · ${cnt("no_room")} sold out · ${cnt("failed")} failed`)); }
+  if (j.phase !== "calling" && j.phase !== "searching") { finish("calls"); s._.over.replaceChildren(el("div", "hero-name", "All calls complete"), el("div", "hero-sub", `${cnt("ok")} with a price · ${cnt("no_room")} sold out · ${cnt("failed")} failed`)); }
 }
 
 function renderStats(j, host) {
   const m = j.metrics; if (!m) return;
   const v = m.voice || {}, o = m.openai || {};
+  const n = (x) => Number(x) || 0;
   const items = [
     [fmtDur(m.elapsed_s), "Total time"],
     [m.first_quote_s != null ? fmtDur(m.first_quote_s) : "–", "First quote"],
     [fmtTok(m.total_tokens), "Tokens"],
-    [fmtDur(v.seconds), `Phone time · ${v.calls || 0} calls`],
+    j.live ? [fmtDur(v.seconds), `Phone time · ${n(v.calls)} calls`] : ["simulated", "Phone time"],
   ];
   const box = host.querySelector(".stats") || host.appendChild(el("div", "stats"));
-  box.title = `Tokens: ${o.input + o.output} OpenAI (parse + review) · ${v.input + v.cached + v.output} voice agent` + (v.cost_usd ? ` · voice cost $${v.cost_usd}` : "");
+  box.title = `Tokens: ${n(o.input) + n(o.output)} OpenAI (parse + review) · ${n(v.input) + n(v.cached) + n(v.output)} voice agent` + (v.cost_usd ? ` · voice cost $${v.cost_usd}` : "");
   box.replaceChildren(...items.map(([a, b]) => { const d = el("div", "stat"); d.append(el("b", "", a), el("span", "", b)); return d; }));
 }
 

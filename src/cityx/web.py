@@ -23,7 +23,8 @@ app = FastAPI(title="cityx")
 settings = Settings()
 jobs: dict[str, Job] = {}
 jobs_lock = threading.Lock()
-parse_usage: dict[str, Usage] = {}  # tokens spent parsing a request, handed to the job that follows
+MAX_PARSE_USAGE = 200
+parse_usage: dict[tuple[str, str], Usage] = {}  # tokens spent parsing a request, handed to the job that follows
 
 
 class ParseRequest(BaseModel):
@@ -75,7 +76,10 @@ def parse(req: ParseRequest) -> JSONResponse:
     try:
         usage = Usage()
         intent = parse_intent(req.message, settings, usage=usage)
-        parse_usage[req.email.strip()] = usage
+        with jobs_lock:
+            parse_usage[(req.email.strip(), req.message.strip()[:1000])] = usage
+            while len(parse_usage) > MAX_PARSE_USAGE:  # requests that never became jobs
+                parse_usage.pop(next(iter(parse_usage)))
     except IntentUnavailable:
         return JSONResponse(
             {"ok": False, "message": "I'm having a little trouble understanding right now. Please try again in a moment."},
@@ -114,7 +118,7 @@ def start_job(req: JobRequest) -> JSONResponse:
             return JSONResponse({"ok": False, "message": "I'm busy with a few searches right now. Try again shortly."})
         job = Job(
             email=email, intent=intent, query=req.query.strip()[:1000] or _synth_query(intent),
-            usage=parse_usage.pop(email, None) or Usage(),
+            usage=parse_usage.pop((email, req.query.strip()[:1000]), None) or Usage(),
         )
         jobs[job.id] = job
     threading.Thread(target=run_job, args=(job, settings), daemon=True).start()

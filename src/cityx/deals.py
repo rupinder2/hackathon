@@ -93,7 +93,9 @@ def search_deals(
                 say(f"{name}: skipped, {prop.get('type')} is not a hotel")
                 return None
             try:
-                detail = _property(client, settings, prop["property_token"], check_in, check_out, adults, currency)
+                detail = _property(client, settings, prop["property_token"], check_in, check_out, adults, currency, stop)
+            except SearchStopped:
+                return None
             except httpx.HTTPError as e:  # str(e) embeds the URL, which carries the API key
                 status = getattr(getattr(e, "response", None), "status_code", None)
                 say(f"{name}: skipped, lookup failed ({status or type(e).__name__})")
@@ -303,7 +305,7 @@ def _list_properties(client, settings, city, check_in, check_out, adults, curren
             return props
 
 
-def _property(client, settings, token, check_in, check_out, adults, currency) -> dict:
+def _property(client, settings, token, check_in, check_out, adults, currency, stop=None) -> dict:
     payload = _get(
         client,
         {
@@ -315,6 +317,7 @@ def _property(client, settings, token, check_in, check_out, adults, currency) ->
             "currency": currency,
             "api_key": settings.searchapi_key,
         },
+        stop,
     )
     return payload.get("property") or {}
 
@@ -342,31 +345,33 @@ def _label(label: str | None, value: float, currency: str) -> str:
     return f"${value:g} {currency}"
 
 
-def _get(client: httpx.Client, params: dict) -> dict:
+class SearchStopped(Exception):
+    """The caller set the stop event, so remaining lookups are skipped."""
+
+
+def _get(client: httpx.Client, params: dict, stop: threading.Event | None = None) -> dict:
     """GET with backoff retries on 429/5xx or a network error.
 
-    A 429 pauses every worker (shared cooldown), not just this one, so the pool stops hammering a
-    rate-limited API; the wait honours Retry-After, else grows exponentially with jitter.
+    Any retryable failure pauses every worker (shared cooldown), not just this one, so the pool
+    stops hammering a struggling API; the wait honours Retry-After, else grows exponentially with
+    jitter. Setting `stop` ends the waiting at once (raises SearchStopped).
     """
     for attempt in range(ATTEMPTS):
         last = attempt == ATTEMPTS - 1
-        _wait_cooldown()
+        _wait_cooldown(stop)
         delay = _backoff(attempt)
         try:
             response = client.get(API_URL, params=params)
         except httpx.TransportError:
             if last:
                 raise
-        else:
-            if response.status_code == 429 and not last:
-                _start_cooldown(_retry_after(response) or delay)
-                continue
-            if response.status_code >= 500 and not last:
-                pass
-            else:
-                response.raise_for_status()
-                return response.json()
-        time.sleep(delay)
+            _start_cooldown(delay)
+            continue
+        if (response.status_code == 429 or response.status_code >= 500) and not last:
+            _start_cooldown(_retry_after(response) or delay)
+            continue
+        response.raise_for_status()
+        return response.json()
     raise AssertionError("unreachable")
 
 
@@ -376,9 +381,10 @@ def _backoff(attempt: int) -> float:
 
 def _retry_after(response: httpx.Response) -> float | None:
     try:
-        return min(MAX_BACKOFF, float(response.headers.get("Retry-After", "")))
+        seconds = float(response.headers.get("Retry-After", ""))
     except ValueError:
         return None
+    return min(MAX_BACKOFF, seconds) if seconds > 0 else None  # zero or negative: use our own backoff
 
 
 def _start_cooldown(seconds: float) -> None:
@@ -386,10 +392,15 @@ def _start_cooldown(seconds: float) -> None:
         _cooldown["until"] = max(_cooldown["until"], time.monotonic() + seconds)
 
 
-def _wait_cooldown() -> None:
+def _wait_cooldown(stop: threading.Event | None = None) -> None:
+    if stop is not None and stop.is_set():
+        raise SearchStopped
     wait = _cooldown["until"] - time.monotonic()
     if wait > 0:
-        time.sleep(wait)
+        if stop is None:
+            time.sleep(wait)
+        elif stop.wait(wait):  # woken early: the search was stopped
+            raise SearchStopped
 
 
 def main() -> None:
