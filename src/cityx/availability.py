@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -31,7 +31,19 @@ class Availability:
     card_required: bool | None = None
     reached_human: bool = False
     notes: str = ""
+    confirmation: str | None = None
+    price_matched: bool | None = None
+    discount_offered: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+def listed_price(hotel: Hotel, currency: str) -> str:
+    """The online price the agent opens with, spoken-friendly; "none" tells the prompt to skip it."""
+    if not hotel.total_price:
+        return "none"
+    amount = f"{hotel.total_price:.0f}" if hotel.total_price == int(hotel.total_price) else f"{hotel.total_price:.2f}"
+    unit = "dollars" if currency in ("CAD", "USD") else currency
+    return f"{amount} {unit} for the stay"
 
 
 def check_availability(
@@ -62,6 +74,7 @@ def check_availability(
                         "check_out": stay.check_out,
                         "adults": str(stay.adults),
                         "currency": stay.currency,
+                        "listed_price": listed_price(h, stay.currency),
                     }
                 },
             }
@@ -150,14 +163,34 @@ def _poll_batch(batch_id: str, headers: dict[str, str], timeout_s: int = 300) ->
 def _collect(hotel: Hotel, conversation_id: str | None, headers: dict[str, str]) -> Availability:
     if not conversation_id:
         return Availability(hotel=hotel, notes="call never connected")
-    deadline = time.time() + 300
+    return _parse(hotel, conversation_id, _poll_conversation(conversation_id, headers))
+
+
+def _poll_conversation(
+    conversation_id: str,
+    headers: dict[str, str],
+    timeout_s: float = 300,
+    interval_s: float = 2,
+    on_status: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    deadline = time.time() + timeout_s
+    last = None
     while True:
         r = httpx.get(f"{API}/conversations/{conversation_id}", headers=headers, timeout=20)
         r.raise_for_status()
         data = r.json()
-        if data.get("status") in DONE_CALL or time.time() > deadline:
-            break
-        time.sleep(2)
+        status = data.get("status")
+        if on_status and status != last:
+            on_status(status)
+        last = status
+        if status in DONE_CALL:
+            return data
+        if time.time() > deadline:
+            return {**data, "timed_out": True}
+        time.sleep(interval_s)
+
+
+def _parse(hotel: Hotel, conversation_id: str | None, data: dict[str, Any]) -> Availability:
     found = (data.get("analysis") or {}).get("data_collection_results") or {}
 
     def val(key: str) -> Any:
@@ -174,5 +207,88 @@ def _collect(hotel: Hotel, conversation_id: str | None, headers: dict[str, str])
         card_required=val("card_required"),
         reached_human=bool(val("reached_human")),
         notes=val("notes") or "",
+        confirmation=val("confirmation_number") or val("reservation_number"),
+        price_matched=val("price_matched"),
+        discount_offered=val("discount_offered"),
         raw=data,
     )
+
+
+StatusCallback = Callable[[str], None]
+NO_CONTACT = ("no_answer", "no-answer", "busy", "voicemail", "unanswered", "failed")
+
+
+def call_hotel(
+    stay: StayRequest,
+    hotel: Hotel,
+    settings: Settings,
+    status_callback: StatusCallback | None = None,
+    poll_interval_s: float = 2,
+    timeout_s: float = 240,
+) -> Availability:
+    """Place ONE outbound call and wait for the agent's result. Never raises on API trouble."""
+    say = status_callback or (lambda _s: None)
+    if not (settings.elevenlabs_api_key and settings.elevenlabs_agent_id and settings.elevenlabs_phone_id):
+        return Availability(hotel=hotel, notes="ElevenLabs is not configured", raw={"error": "not configured"})
+    headers = {"xi-api-key": settings.elevenlabs_api_key}
+    payload = {
+        "agent_id": settings.elevenlabs_agent_id,
+        "agent_phone_number_id": settings.elevenlabs_phone_id,
+        "to_number": hotel.phone,
+        "conversation_initiation_client_data": {
+            "dynamic_variables": {
+                "hotel_name": hotel.name,
+                "guest_name": stay.guest_name,
+                "check_in": stay.check_in,
+                "check_out": stay.check_out,
+                "adults": str(stay.adults),
+                "currency": stay.currency,
+                "listed_price": listed_price(hotel, stay.currency),
+            }
+        },
+    }
+    say("dialing")
+    try:
+        r = httpx.post(f"{API}/twilio/outbound-call", headers=headers, json=payload, timeout=30)
+        if r.is_error:
+            return Availability(hotel=hotel, notes=f"call API error {r.status_code}", raw={"error": r.text[:300]})
+        body = r.json()
+        cid = body.get("conversation_id")
+        if not (body.get("success", True) and cid):
+            return Availability(hotel=hotel, notes="call did not start", raw={"error": str(body)[:300]})
+        say("in_call")
+
+        def on_status(status: str | None) -> None:
+            if status == "processing":
+                say("analyzing")
+
+        data = _poll_conversation(cid, headers, timeout_s, poll_interval_s, on_status)
+    except (httpx.HTTPError, ValueError) as e:
+        return Availability(hotel=hotel, notes=f"API error: {e}", raw={"error": str(e)})
+    if data.get("timed_out"):
+        return Availability(hotel=hotel, conversation_id=cid, notes="call timed out", raw={**data, "error": "timeout"})
+    say("analyzing")
+    result = _parse(hotel, cid, data)
+    try:
+        _log_call(result, {"status": data.get("status")})
+    except OSError:
+        pass
+    return result
+
+
+def classify(av: Availability, raw: dict[str, Any] | None = None) -> str:
+    """"ok" when the hotel answered and the agent captured an answer (even "no rooms"), else "failed"."""
+    raw = av.raw if raw is None else raw
+    if not av.conversation_id or raw.get("error") or raw.get("timed_out"):
+        return "failed"
+    if raw.get("status") != "done":
+        return "failed"
+    reason = str(((raw.get("metadata") or {}).get("termination_reason")) or "").lower()
+    if any(k in reason for k in NO_CONTACT):
+        return "failed"
+    found = (raw.get("analysis") or {}).get("data_collection_results") or {}
+    if all((v or {}).get("value") is None for v in found.values()):
+        return "failed"
+    if (found.get("reached_human") or {}).get("value") is False:
+        return "failed"
+    return "ok"

@@ -17,7 +17,7 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+  main { max-width: 920px; margin: 0 auto; padding: 32px 16px 64px; }
   h1 { font-size: 1.6rem; margin: 0 0 4px; }
   .sub { color: var(--muted); margin: 0 0 24px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
@@ -43,7 +43,54 @@
   .result { font-weight: 600; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .92rem; }
   td { padding: 6px 0; border-top: 1px solid var(--line); } td:last-child { text-align: right; font-weight: 600; }
+  #ask, #confirm { max-width: 640px; margin-left: auto; margin-right: auto; }
+  h1, .sub, .banner { max-width: 640px; margin-left: auto; margin-right: auto; }
   [hidden] { display: none !important; }
+  /* progress view */
+  :root { --chip: #eef0f4; --amber: #b86e00; --amber-bg: #fff1d6; --ok-bg: #e2f4ea; --err-bg: #fde8e6; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --chip: #242a35; --amber: #f0c36b; --amber-bg: #2b2412; --ok-bg: #12301f; --err-bg: #34191a; } }
+  .stepper { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0 0 14px; flex-wrap: wrap; }
+  .stepper li { flex: 1 1 100px; text-align: center; padding: 8px 6px; border-radius: 10px; background: var(--chip); color: var(--muted); font-size: .85rem; font-weight: 600; border: 1px solid transparent; transition: background .3s, color .3s; }
+  .stepper li.done { background: var(--ok-bg); color: var(--ok); }
+  .stepper li.current { background: var(--card); color: var(--accent); border-color: var(--accent); animation: glow 1.4s ease-in-out infinite; }
+  .counts { font-weight: 600; margin: 0 0 12px; min-height: 1.5em; }
+  .best { background: var(--ok-bg); color: var(--ok); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-weight: 600; transition: transform .3s; }
+  .best.bump { transform: scale(1.02); }
+  #grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+  .slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .hc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; grid-template-columns: 28px 1fr; gap: 2px 10px; transition: background .3s, border-color .3s, opacity .3s; animation: slidein .35s ease-out; }
+  .hc .rank { grid-row: span 3; width: 26px; height: 26px; border-radius: 50%; background: var(--chip); font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  .hc .nm { font-weight: 600; overflow-wrap: anywhere; }
+  .hc .ad { color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+  .hc .meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .hc .pr { font-size: .85rem; color: var(--muted); }
+  .hc .tag { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; background: var(--chip); color: var(--muted); transition: background .3s, color .3s; }
+  .hc.s-dialing .chip, .hc.s-in_call .chip, .hc.s-analyzing .chip { background: var(--card); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .hc.s-retrying .chip { background: var(--amber-bg); color: var(--amber); }
+  .hc.s-ok { border-color: var(--ok); } .hc.s-ok .chip { background: var(--ok-bg); color: var(--ok); }
+  .hc.s-no_room { opacity: .75; }
+  .hc.s-failed { border-color: var(--err); opacity: .8; } .hc.s-failed .chip { background: var(--err-bg); color: var(--err); }
+  .hc.replaced { opacity: .55; }
+  .ind { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .hc.s-dialing .ind, .hc.s-retrying .ind { animation: pulse 1s ease-in-out infinite; }
+  .hc.s-in_call .ind { width: 14px; height: 12px; background: none; display: inline-flex; align-items: flex-end; gap: 2px; }
+  .hc.s-in_call .ind i { width: 3px; background: currentColor; border-radius: 2px; animation: wave .9s ease-in-out infinite; height: 100%; }
+  .hc.s-in_call .ind i:nth-child(2) { animation-delay: .15s; } .hc.s-in_call .ind i:nth-child(3) { animation-delay: .3s; }
+  .hc.s-analyzing .ind { width: 12px; height: 12px; background: none; border: 2px solid currentColor; border-top-color: transparent; animation: spin .8s linear infinite; }
+  .hc .note { grid-column: 2; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+  details.list { margin-top: 10px; } details.list summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+  details.list.dim { opacity: .65; }
+  .row2 { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: .9rem; }
+  .row2 span:last-child { text-align: right; color: var(--muted); }
+  .badge { display: inline-block; font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); margin-left: 6px; vertical-align: middle; }
+  @keyframes pulse { 50% { opacity: .25; transform: scale(.8); } }
+  @keyframes wave { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes glow { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); } }
+  @keyframes slidein { from { opacity: 0; transform: translateY(8px); } }
+  @media (max-width: 640px) { #grid { grid-template-columns: 1fr; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
@@ -76,16 +123,21 @@
     <div id="startErr" class="bubble err" hidden></div>
   </section>
 
-  <section id="progress" class="card" hidden>
-    <ol id="steps" class="steps"></ol>
-    <div id="result" class="result" hidden></div>
-    <table id="options" hidden></table>
+  <section id="progress" hidden>
+    <ol id="stepper" class="stepper"></ol>
+    <p id="counts" class="counts"></p>
+    <div id="best" class="best" hidden></div>
+    <div id="grid"></div>
+    <div id="result" class="card result" hidden></div>
+    <details id="logbox" class="list"><summary>Activity</summary><ol id="steps" class="steps"></ol></details>
+    <details id="allbox" class="list" hidden><summary id="allsum"></summary><div id="alllist"></div></details>
+    <details id="rejbox" class="list dim" hidden><summary id="rejsum"></summary><div id="rejlist"></div></details>
     <div style="margin-top:16px"><button id="again" hidden>Start another search</button></div>
   </section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
-let parsed = null, email = "", pollTimer = null;
+let parsed = null, email = "", query = "", pollTimer = null, live = false;
 
 const post = (url, body) =>
   fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
@@ -98,13 +150,13 @@ const money = (n, c) => new Intl.NumberFormat(undefined, { style: "currency", cu
 const day = (s) => new Date(s + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
 fetch("/api/config").then((r) => r.json()).then((c) => {
-  $("banner").hidden = c.live;
+  live = c.live; $("banner").hidden = c.live;
   if (c.example) $("msg").placeholder = c.example.replace(/^Try something like: /, "").replace(/[“”]/g, "");
 }).catch(() => {});
 
 $("go").onclick = async () => {
   $("reply").hidden = true;
-  email = $("email").value.trim();
+  email = $("email").value.trim(); query = $("msg").value.trim();
   $("go").disabled = true; $("go").textContent = "Reading your request…";
   try {
     const { data } = await post("/api/parse", { message: $("msg").value, email });
@@ -133,35 +185,183 @@ $("edit").onclick = () => { $("confirm").hidden = true; $("ask").hidden = false;
 
 $("start").onclick = async () => {
   $("startErr").hidden = true; $("start").disabled = true;
-  const { data } = await post("/api/jobs", { email, ...parsed });
+  const { data } = await post("/api/jobs", { email, ...parsed, query });
   $("start").disabled = false;
   if (!data.ok) return say($("startErr"), data.message || "Couldn't start the search.", true);
   $("confirm").hidden = true; $("progress").hidden = false;
-  $("steps").replaceChildren(); $("result").hidden = true; $("options").hidden = true; $("again").hidden = true;
+  resetProgress();
   poll(data.job_id);
 };
 
+const PHASES = [["searching", "Searching"], ["calling", "Calling"], ["emailing", "Emailing"], ["done", "Done"]];
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let cards = new Map(), slots = new Map(), shown = {};
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function resetProgress() {
+  cards = new Map(); slots = new Map(); shown = {};
+  $("grid").replaceChildren(); $("steps").replaceChildren(); $("counts").textContent = "";
+  for (const id of ["result", "best", "again", "allbox", "rejbox"]) $(id).hidden = true;
+  $("badge") && $("badge").remove();
+  $("stepper").replaceChildren(...PHASES.map(([k, t]) => { const li = el("li", "", t); li.dataset.k = k; return li; }));
+}
+
+function counter(span, to) {
+  const from = +span.dataset.v || 0;
+  span.dataset.v = to;
+  if (reduce || from === to) { span.textContent = to; return; }
+  const t0 = performance.now();
+  const step = (t) => {
+    const f = Math.min(1, (t - t0) / 500);
+    span.textContent = Math.round(from + (to - from) * f);
+    if (f < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function renderCounts(j) {
+  const box = $("counts");
+  if (!j.search_total && j.phase === "searching") { box.textContent = "Searching Google Hotels…"; return; }
+  if (!box.firstChild || !box.querySelector("[data-n]")) {
+    const mk = (id) => { const s = el("span"); s.dataset.n = id; return s; };
+    box.replaceChildren("Found ", mk("t"), " stays with phones · ", mk("v"), " passed validation");
+    box.append(el("span", "", ""));
+    box.lastChild.dataset.n = "tail";
+  }
+  counter(box.querySelector('[data-n="t"]'), j.search_total);
+  const v = box.querySelector('[data-n="v"]');
+  if (j.phase === "searching") { v.textContent = "…"; v.dataset.v = 0; }
+  else counter(v, j.validated_total);
+  const calls = Math.min(10, j.validated_total);
+  box.querySelector('[data-n="tail"]').textContent = j.phase === "searching" || j.phase === "validating" ? "" : ` · ${j.live ? "calling" : "simulating calls to"} the ${calls} cheapest`;
+}
+
+function chipText(a) {
+  switch (a.state) {
+    case "queued": return "Queued";
+    case "dialing": return "Dialing…";
+    case "in_call": return "On the call";
+    case "analyzing": return "Analyzing";
+    case "retrying": return "Retry 1/1";
+    case "no_room": return "Sold out";
+    case "failed": return "Failed";
+    case "ok": {
+      const r = a.result || {};
+      return (r.total_price != null ? money(r.total_price, parsed && parsed.currency) : "Available") + (r.room_type ? " · " + r.room_type : "");
+    }
+  }
+  return a.state;
+}
+
+function buildCard(a) {
+  const c = el("div", "hc");
+  const rank = el("div", "rank");
+  const body = el("div", "nm"), ad = el("div", "ad"), meta = el("div", "meta"), note = el("div", "note");
+  const left = el("div"), tag = el("span", "tag"), pr = el("span", "pr");
+  left.append(tag, pr);
+  const chip = el("span", "chip"), ind = el("span", "ind");
+  ind.append(el("i"), el("i"), el("i"));
+  const lab = el("span");
+  chip.append(ind, lab);
+  meta.append(left, chip);
+  c.append(rank, body, ad, meta, note);
+  c._p = { rank, body, ad, tag, pr, lab, note };
+  return c;
+}
+
+function updateCard(c, a, repl) {
+  const p = c._p;
+  c.className = "hc s-" + a.state + (a.state === "failed" && a.replaced_by ? " replaced" : "");
+  p.rank.textContent = a.slot + 1;
+  p.body.textContent = a.name;
+  p.ad.textContent = a.address || "";
+  p.pr.textContent = a.listed_price ? "Listed " + a.listed_price : "";
+  p.tag.textContent = a.replacement_for ? "Replacement · " : "";
+  p.lab.textContent = chipText(a);
+  let note = "";
+  if (a.state === "failed") note = a.replaced_by ? "Failed — replaced by " + a.replaced_by : "Failed — " + (a.message || "no answer");
+  else if (a.state === "ok" || a.state === "no_room") note = a.attempt > 1 ? "Connected on retry" : "";
+  else if (a.state === "retrying") note = a.message || "";
+  else if (a.replacement_for) note = "Replacing " + a.replacement_for;
+  p.note.textContent = note;
+}
+
+function renderAgents(j) {
+  for (const a of j.agents) {
+    let c = cards.get(a.hotel_index);
+    if (!c) {
+      c = buildCard(a);
+      cards.set(a.hotel_index, c);
+      let g = slots.get(a.slot);
+      if (!g) {
+        g = el("div", "slot"); slots.set(a.slot, g);
+        const next = [...slots.keys()].filter((k) => k > a.slot).sort((x, y) => x - y)[0];
+        $("grid").insertBefore(g, next != null ? slots.get(next) : null);
+      }
+      g.append(c);
+    }
+    updateCard(c, a);
+  }
+}
+
+function renderBest(j) {
+  const b = $("best");
+  if (!j.best) { b.hidden = true; return; }
+  const txt = `${j.status === "done" || j.status === "failed" ? "Best price" : "Best so far"}: ${j.best.hotel} at ${money(j.best.price, parsed && parsed.currency)}${j.best.room ? " · " + j.best.room : ""}`;
+  if (b.textContent !== txt && !reduce) { b.classList.add("bump"); setTimeout(() => b.classList.remove("bump"), 300); }
+  b.textContent = txt; b.hidden = false;
+}
+
+function renderLists(j) {
+  const fill = (box, sum, list, items, label, extra) => {
+    const key = label + items.length;
+    if (!items.length) { box.hidden = true; return; }
+    box.hidden = false; sum.textContent = `${label} (${items.length})`;
+    if (shown[label] === key) return;
+    shown[label] = key;
+    list.replaceChildren(...items.map((r) => {
+      const d = el("div", "row2"), l = el("span", "", r.name + (r.address ? " · " + r.address : "")), rr = el("span", "", extra(r));
+      d.append(l, rr); return d;
+    }));
+  };
+  fill($("allbox"), $("allsum"), $("alllist"), j.results, "Search results (all " + j.results.length + ")", (r) => r.listed_price || "");
+  $("allsum").textContent = `Search results (all ${j.results.length})`;
+  fill($("rejbox"), $("rejsum"), $("rejlist"), j.rejected_items, "Rejected", (r) => r.reason);
+}
+
+function renderPhase(j) {
+  const idx = PHASES.findIndex(([k]) => k === j.phase);
+  const finished = j.status === "done" || j.status === "failed";
+  [...$("stepper").children].forEach((li, n) => {
+    li.className = finished || n < idx ? "done" : n === idx ? "current" : "";
+  });
+}
+
 function poll(id) {
   fetch("/api/jobs/" + id).then((r) => r.json()).then((j) => {
+    if (!j.steps) { say($("result"), j.message || "I can't find that search.", true); $("result").hidden = false; $("again").hidden = false; return; }
+    renderPhase(j); renderCounts(j); renderAgents(j); renderBest(j); renderLists(j);
     $("steps").replaceChildren(...j.steps.map((s, n) => {
       const li = document.createElement("li");
       li.textContent = s;
       if (j.status === "running" && n === j.steps.length - 1) li.className = "active";
       return li;
     }));
+    if (!j.live && !$("badge")) {
+      const b = el("span", "badge", "Demo mode · simulated calls"); b.id = "badge"; $("counts").after(b);
+    }
     if (j.status === "done" || j.status === "failed") {
       $("result").textContent = j.summary; $("result").hidden = false; $("again").hidden = false;
-      if (j.options && j.options.length) {
-        $("options").replaceChildren(...j.options.map((o) => {
-          const tr = document.createElement("tr"), a = document.createElement("td"), b = document.createElement("td");
-          a.textContent = o.hotel; b.textContent = money(o.price, parsed.currency); tr.append(a, b); return tr;
-        }));
-        $("options").hidden = false;
-      }
       return;
     }
-    pollTimer = setTimeout(() => poll(id), 2000);
-  }).catch(() => { pollTimer = setTimeout(() => poll(id), 4000); });
+    pollTimer = setTimeout(() => poll(id), 1000);
+  }).catch(() => { pollTimer = setTimeout(() => poll(id), 3000); });
 }
 
 $("again").onclick = () => {

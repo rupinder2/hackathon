@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from .config import Settings
 from .intent import EXAMPLE, Intent, IntentUnavailable, parse_intent, validate
 from .pipeline import Job, run_job
+from .validate_results import _synth_query
 
 STATIC = Path(__file__).parent / "static"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -37,6 +38,7 @@ class JobRequest(BaseModel):
     budget: float | None = None
     currency: str = ""
     guest_name: str = ""
+    query: str = ""
 
 
 def _intent_json(i: Intent) -> dict:
@@ -106,7 +108,7 @@ def start_job(req: JobRequest) -> JSONResponse:
             )
         if len(active) >= MAX_RUNNING:
             return JSONResponse({"ok": False, "message": "I'm busy with a few searches right now. Try again shortly."})
-        job = Job(email=email, intent=intent)
+        job = Job(email=email, intent=intent, query=req.query.strip()[:1000] or _synth_query(intent))
         jobs[job.id] = job
     threading.Thread(target=run_job, args=(job, settings), daemon=True).start()
     return JSONResponse({"ok": True, "job_id": job.id})

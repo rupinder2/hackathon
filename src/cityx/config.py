@@ -35,13 +35,17 @@ class Settings:
     elevenlabs_api_key: str = _env("ELEVENLABS_API_KEY")
     elevenlabs_agent_id: str = _env("ELEVENLABS_AGENT_ID", "agent_3801m5571nj3f938ke1v1p3rxys2")
     elevenlabs_phone_id: str = _env("ELEVENLABS_PHONE_NUMBER_ID", "phnum_1501m5577ynnfy69pt6vqv9xbknm")
+    call_limit: int = int(_env("CALL_LIMIT", "0") or "0")  # test mode: dial at most this many hotels
+    call_phone_override: str = _env("CALL_PHONE_OVERRIDE")  # dial this number instead of the hotel's
+    team_number: str = _env("TEAM_NUMBER")
     voice_provider: str = _env("VOICE_PROVIDER", "bland")
     max_hotels_to_try: int = int(_env("MAX_HOTELS_TO_TRY", "5") or "5")
 
+    searchapi_key: str = _env("SEARCHAPI_API_KEY")
     openai_api_key: str = _env("OPENAI_API_KEY") or _env("OPEN_AI_API_KEY")
     parse_model: str = _env("PARSE_MODEL", "gpt-5.4-mini")
     live_calls: bool = _env("LIVE_CALLS") in {"1", "true", "yes"}
-    smtp_host: str = _env("SMTP_HOST", "smtp.gmail.com")
+    smtp_host: str = _env("SMTP_HOST") or _env("GMAIL_SMTP_SERVER", "smtp.gmail.com")
     smtp_user: str = _env("SMTP_USER") or _env("GMAIL_SMTP_USER") or _env("IMAP_USER")
     smtp_password: str = (
         _env("SMTP_PASSWORD") or _env("GMAIL_SMTP_PASSWORD") or _env("IMAP_PASSWORD")

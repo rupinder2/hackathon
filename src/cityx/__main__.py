@@ -6,7 +6,7 @@ import json
 from .availability import cheapest, check_availability
 from .config import Settings
 from .models import StayRequest
-from .notify import build_email, send_email
+from .notify import build_email, fetch_audio, send_email
 from .orchestrator import run_bakeoff
 from .rank import rank_hotels
 from .search import find_hotels
@@ -46,6 +46,11 @@ def main() -> None:
     check_p.add_argument("--notify", metavar="EMAIL", help="Email the cheapest available room's booking details here")
     check_p.add_argument("--live", action="store_true", help="Actually place the calls (default: dry run)")
 
+    find_p = sub.add_parser("find", help="Free-text request: search, validate, call in parallel, email the cheapest")
+    find_p.add_argument("query", help='e.g. "Cheapest hotel in Toronto tonight under $200"')
+    find_p.add_argument("--email", required=True)
+    find_p.add_argument("--live", action="store_true", help="Place real calls and send email (default: simulated calls)")
+
     serve_p = sub.add_parser("serve", help="Run the web app (set LIVE_CALLS=1 to place real calls)")
     serve_p.add_argument("--host", default="127.0.0.1")
     serve_p.add_argument("--port", type=int, default=8000)
@@ -57,6 +62,20 @@ def main() -> None:
         uvicorn.run("cityx.web:app", host=args.host, port=args.port)
         return
     settings = Settings()
+    if args.cmd == "find":
+        import dataclasses
+
+        from .intent import parse_intent
+        from .pipeline import Job, run_job
+
+        settings = dataclasses.replace(settings, live_calls=args.live)
+        intent = parse_intent(args.query, settings)
+        if not intent.ok:
+            raise SystemExit(intent.message)
+        job = Job(email=args.email, intent=intent, query=args.query)
+        run_job(job, settings)
+        print("\n".join(job.steps), job.summary, sep="\n\n")
+        return
     stay = _stay(args, settings)
     if not stay.city:
         raise SystemExit("Pass --city (City X is revealed at bake-off).")
@@ -88,7 +107,10 @@ def main() -> None:
             print(f"{a.total_price} {stay.currency}  {a.hotel.name}  {a.hotel.phone}  {a.room_type or ''}  {a.notes}")
         print(f"{len(results) - len(quoted)} hotel(s) without a usable quote")
         if args.notify and quoted:
-            msg = build_email(stay, results, args.notify, settings.smtp_user or args.notify)
+            msg = build_email(
+                stay, results, args.notify, settings.smtp_user or args.notify, settings.team_number,
+                audio=fetch_audio(cheapest(results)[0].conversation_id, settings),
+            )
             if args.live and settings.can_email:
                 send_email(msg, settings)
                 print(f"Emailed details to {args.notify}")

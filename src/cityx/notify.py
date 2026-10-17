@@ -3,12 +3,23 @@ from __future__ import annotations
 import smtplib
 from email.message import EmailMessage
 
-from .availability import Availability, cheapest
+import httpx
+
+from .availability import API, Availability, cheapest
 from .config import Settings
 from .models import StayRequest
 
+MAX_AUDIO_BYTES = 20 * 1024 * 1024  # Gmail rejects messages over 25MB
 
-def build_email(stay: StayRequest, results: list[Availability], to_addr: str, sender: str) -> EmailMessage:
+
+def build_email(
+    stay: StayRequest,
+    results: list[Availability],
+    to_addr: str,
+    sender: str,
+    team: str = "",
+    audio: bytes | None = None,
+) -> EmailMessage:
     quoted = cheapest(results)
     if not quoted:
         raise RuntimeError("No available room with a price to email")
@@ -17,45 +28,29 @@ def build_email(stay: StayRequest, results: list[Availability], to_addr: str, se
     msg = EmailMessage()
     msg["To"] = to_addr
     msg["From"] = sender
-    msg["Subject"] = (
-        f"Cheapest hotel in {stay.city}: {best.hotel.name} {best.total_price:.0f} {cur} "
-        f"({stay.check_in} to {stay.check_out})"
-    )
+    msg["Subject"] = f"Team # {team or 'X'} - Hotel Reservation Confirmed!"
     lines = [
-        f"Cheapest available room in {stay.city}, confirmed by phone.",
+        f"Hotel Name: {best.hotel.name}",
+        f"Hotel Address: {best.hotel.address or 'not available'}",
+        f"Hotel Phone: {best.hotel.phone}",
+        f"Reservation #: {best.confirmation or 'not provided'}",
+        f"Reservation Date: {stay.check_in} to {stay.check_out}",
+        f"Price for the stay: {best.total_price:.2f} {cur}",
+        f"Link To Audio Recording of the conversation: {audio_link(best.conversation_id)}",
         "",
-        "HOTEL",
-        f"  Name:     {best.hotel.name}",
-        f"  Phone:    {best.hotel.phone}",
-    ]
-    if best.hotel.address:
-        lines.append(f"  Address:  {best.hotel.address}")
-    lines += [
-        "",
-        "STAY",
-        f"  Check-in:   {stay.check_in}",
-        f"  Check-out:  {stay.check_out}",
-        f"  Guests:     {stay.adults}",
-        f"  Guest name: {stay.guest_name}",
-        "",
-        "WHAT THE FRONT DESK QUOTED",
-        f"  Total price:   {best.total_price:.2f} {cur} (taxes and fees included)",
+        "DETAILS",
+        f"  Guest name:    {stay.guest_name} ({stay.adults} guest(s))",
         f"  Room type:     {best.room_type or 'not stated'}",
         f"  Cancellable:   {_yn(best.cancellable)}",
         f"  Card to hold:  {_yn(best.card_required)}",
+        f"  Matched online price: {_yn(best.price_matched)}",
+        f"  Discount (CAA / Amex Platinum): {best.discount_offered or 'not asked'}",
     ]
     if best.notes:
         lines.append(f"  Notes:         {best.notes}")
     summary = (best.raw.get("analysis") or {}).get("transcript_summary")
     if summary:
         lines += ["", "CALL SUMMARY", f"  {summary}"]
-    lines += [
-        "",
-        "TO BOOK",
-        f"  Call {best.hotel.phone}, ask for the front desk, and book {stay.check_in} to {stay.check_out}",
-        f"  for {stay.adults} guest(s) at the quoted total of {best.total_price:.2f} {cur}.",
-        "  Prices are as quoted on the call; confirm the total again before paying.",
-    ]
     if others:
         lines += ["", "OTHER AVAILABLE OPTIONS"]
         for a in others:
@@ -63,10 +58,32 @@ def build_email(stay: StayRequest, results: list[Availability], to_addr: str, se
                 f"  {a.total_price:.2f} {cur}  {a.hotel.name}  {a.hotel.phone}  "
                 f"{a.room_type or ''}  cancellable: {_yn(a.cancellable)}"
             )
-    if best.conversation_id:
-        lines += ["", f"Call reference: {best.conversation_id}"]
     msg.set_content("\n".join(lines))
+    if audio:
+        msg.add_attachment(audio, maintype="audio", subtype="mpeg", filename=f"{best.conversation_id}.mp3")
     return msg
+
+
+def fetch_audio(conversation_id: str | None, settings: Settings) -> bytes | None:
+    """The call recording from ElevenLabs, or None if it isn't ready (the email then carries only the link)."""
+    if not (conversation_id and settings.elevenlabs_api_key):
+        return None
+    try:
+        r = httpx.get(
+            f"{API}/conversations/{conversation_id}/audio",
+            headers={"xi-api-key": settings.elevenlabs_api_key},
+            timeout=60,
+        )
+    except httpx.HTTPError:
+        return None
+    return r.content if r.is_success and len(r.content) <= MAX_AUDIO_BYTES else None
+
+
+def audio_link(conversation_id: str | None) -> str:
+    """ElevenLabs dashboard page for the call; the recording plays there (sign-in required)."""
+    if not conversation_id:
+        return "not available"
+    return f"https://elevenlabs.io/app/agents/history/{conversation_id}"
 
 
 def send_email(msg: EmailMessage, settings: Settings) -> None:
