@@ -17,7 +17,7 @@ class Settings:
     bland_api_key: str = _env("BLAND_API_KEY")
     guest_name: str = _env("GUEST_NAME", "Rupinder")
     guest_phone: str = _env("GUEST_PHONE")
-    receipt_email: str = _env("RECEIPT_EMAIL")
+    receipt_email: str = _env("RECEIPT_EMAIL", "hackathon@techto.org")
     card_note: str = _env("GUEST_CARD_NOTE", "Guarantee at check-in if a card is required.")
     city: str = _env("CITY")
     check_in: str = _env("CHECK_IN", "2026-10-18")

@@ -184,7 +184,7 @@ const toBottom = () => requestAnimationFrame(() => { feed.scrollTop = feed.scrol
 const add = (node) => { feed.append(node); toBottom(); return node; };
 const bot = (text, err) => add(el("div", "msg bot" + (err ? " err" : ""), text));
 
-try { $("email").value = localStorage.getItem("cityx.email") || ""; } catch (e) {}
+try { $("email").value = localStorage.getItem("cityx.email") || "hackathon@techto.org"; } catch (e) { $("email").value = "hackathon@techto.org"; }
 
 fetch("/api/config").then((r) => r.json()).then((c) => {
   live = c.live; $("demo").hidden = c.live;

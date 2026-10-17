@@ -11,6 +11,14 @@ from .models import StayRequest
 
 MAX_AUDIO_BYTES = 20 * 1024 * 1024  # Gmail rejects messages over 25MB
 
+TEAM_MEMBERS = [
+    ("Rupinder Singh", "is.rupinder23@gmail.com"),
+    ("Umang Rajkarnikar", "umang.rk15@gmail.com"),
+    ("Zachary Fong", "zachfongbc@gmail.com"),
+    ("Malado Callaghan", "malado@gmail.com"),
+    ("Valentin Khokhlov", "on.valentin.khokhlov@gmail.com"),
+]
+
 
 def build_email(
     stay: StayRequest,
@@ -58,6 +66,7 @@ def build_email(
                 f"  {a.total_price:.2f} {cur}  {a.hotel.name}  {a.hotel.phone}  "
                 f"{a.room_type or ''}  cancellable: {_yn(a.cancellable)}"
             )
+    lines += ["", "TEAM"] + [f"  {name} ({addr})" for name, addr in TEAM_MEMBERS]
     msg.set_content("\n".join(lines))
     if audio:
         msg.add_attachment(audio, maintype="audio", subtype="mpeg", filename=f"{best.conversation_id}.mp3")
