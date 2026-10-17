@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cheapest Hotel Caller</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #14181f; --muted: #5d6675; --line: #dfe3ea;
+    --accent: #2457f5; --accent-text: #fff; --ok: #137a3f; --warn-bg: #fff5e0; --warn: #8a5a00; --err: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1218; --card: #181c24; --text: #eef1f6; --muted: #9aa3b2; --line: #2a303b;
+      --accent: #6f93ff; --accent-text: #0b1020; --ok: #4cc380; --warn-bg: #2b2412; --warn: #f0c36b; --err: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+  label { display: block; font-weight: 600; font-size: .9rem; margin: 0 0 6px; }
+  textarea, input { width: 100%; padding: 12px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+  textarea { min-height: 96px; resize: vertical; }
+  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .field { margin-bottom: 16px; }
+  .hint { color: var(--muted); font-size: .85rem; margin-top: 6px; }
+  button { font: inherit; font-weight: 600; padding: 12px 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button:disabled { opacity: .55; cursor: default; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .bubble { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 14px; }
+  .bubble.err { border-color: var(--err); }
+  .banner { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: .9rem; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 16px; }
+  dt { color: var(--muted); } dd { margin: 0; font-weight: 600; }
+  ol.steps { list-style: none; padding: 0; margin: 0 0 12px; }
+  ol.steps li { padding: 6px 0 6px 26px; position: relative; }
+  ol.steps li::before { content: "✓"; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
+  ol.steps li.active::before { content: "…"; color: var(--muted); }
+  .result { font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .92rem; }
+  td { padding: 6px 0; border-top: 1px solid var(--line); } td:last-child { text-align: right; font-weight: 600; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cheapest hotel, booked by phone</h1>
+  <p class="sub">Tell me where, when and your budget. I call the hotels for you and email what you need to book.</p>
+  <div id="banner" class="banner" hidden>Demo mode: I'll find hotels but won't place any calls or send emails.</div>
+
+  <section id="ask" class="card">
+    <div class="field">
+      <label for="msg">What are you looking for?</label>
+      <textarea id="msg" placeholder="Cheapest hotel in Toronto this Saturday for one night, under $200"></textarea>
+    </div>
+    <div class="field">
+      <label for="email">Your email</label>
+      <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
+      <div class="hint">I'll send the booking details here.</div>
+    </div>
+    <button id="go" class="primary">Find my hotel</button>
+    <div id="reply" class="bubble" hidden></div>
+  </section>
+
+  <section id="confirm" class="card" hidden>
+    <strong>Here's what I understood</strong>
+    <dl id="facts" style="margin-top:12px"></dl>
+    <div class="row">
+      <button id="start" class="primary">Call the hotels</button>
+      <button id="edit">Change something</button>
+    </div>
+    <div id="startErr" class="bubble err" hidden></div>
+  </section>
+
+  <section id="progress" class="card" hidden>
+    <ol id="steps" class="steps"></ol>
+    <div id="result" class="result" hidden></div>
+    <table id="options" hidden></table>
+    <div style="margin-top:16px"><button id="again" hidden>Start another search</button></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let parsed = null, email = "", pollTimer = null;
+
+const post = (url, body) =>
+  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    .then(async (r) => ({ status: r.status, data: await r.json().catch(() => ({})) }));
+
+function say(el, text, isErr) {
+  el.textContent = text; el.hidden = false; el.classList.toggle("err", !!isErr);
+}
+const money = (n, c) => new Intl.NumberFormat(undefined, { style: "currency", currency: c || "CAD", maximumFractionDigits: 0 }).format(n);
+const day = (s) => new Date(s + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+fetch("/api/config").then((r) => r.json()).then((c) => {
+  $("banner").hidden = c.live;
+  if (c.example) $("msg").placeholder = c.example.replace(/^Try something like: /, "").replace(/[“”]/g, "");
+}).catch(() => {});
+
+$("go").onclick = async () => {
+  $("reply").hidden = true;
+  email = $("email").value.trim();
+  $("go").disabled = true; $("go").textContent = "Reading your request…";
+  try {
+    const { data } = await post("/api/parse", { message: $("msg").value, email });
+    if (!data.ok) return say($("reply"), data.message || "Something went wrong. Please try again.", false);
+    parsed = data.intent;
+    const i = parsed, rows = [
+      ["Where", i.city],
+      ["Dates", `${day(i.check_in)} → ${day(i.check_out)} (${i.nights} night${i.nights > 1 ? "s" : ""})`],
+      ["Guests", i.adults],
+      ["Budget", i.budget ? `up to ${money(i.budget, i.currency)} total` : "no limit"],
+      ["Email details to", email],
+    ];
+    $("facts").replaceChildren(...rows.flatMap(([k, v]) => {
+      const dt = document.createElement("dt"), dd = document.createElement("dd");
+      dt.textContent = k; dd.textContent = v; return [dt, dd];
+    }));
+    $("ask").hidden = true; $("confirm").hidden = false;
+  } catch (e) {
+    say($("reply"), "I couldn't reach the server. Check your connection and try again.", true);
+  } finally {
+    $("go").disabled = false; $("go").textContent = "Find my hotel";
+  }
+};
+
+$("edit").onclick = () => { $("confirm").hidden = true; $("ask").hidden = false; };
+
+$("start").onclick = async () => {
+  $("startErr").hidden = true; $("start").disabled = true;
+  const { data } = await post("/api/jobs", { email, ...parsed });
+  $("start").disabled = false;
+  if (!data.ok) return say($("startErr"), data.message || "Couldn't start the search.", true);
+  $("confirm").hidden = true; $("progress").hidden = false;
+  $("steps").replaceChildren(); $("result").hidden = true; $("options").hidden = true; $("again").hidden = true;
+  poll(data.job_id);
+};
+
+function poll(id) {
+  fetch("/api/jobs/" + id).then((r) => r.json()).then((j) => {
+    $("steps").replaceChildren(...j.steps.map((s, n) => {
+      const li = document.createElement("li");
+      li.textContent = s;
+      if (j.status === "running" && n === j.steps.length - 1) li.className = "active";
+      return li;
+    }));
+    if (j.status === "done" || j.status === "failed") {
+      $("result").textContent = j.summary; $("result").hidden = false; $("again").hidden = false;
+      if (j.options && j.options.length) {
+        $("options").replaceChildren(...j.options.map((o) => {
+          const tr = document.createElement("tr"), a = document.createElement("td"), b = document.createElement("td");
+          a.textContent = o.hotel; b.textContent = money(o.price, parsed.currency); tr.append(a, b); return tr;
+        }));
+        $("options").hidden = false;
+      }
+      return;
+    }
+    pollTimer = setTimeout(() => poll(id), 2000);
+  }).catch(() => { pollTimer = setTimeout(() => poll(id), 4000); });
+}
+
+$("again").onclick = () => {
+  clearTimeout(pollTimer);
+  $("progress").hidden = true; $("ask").hidden = false; $("reply").hidden = true; $("msg").value = "";
+};
+</script>
+</body>
+</html>

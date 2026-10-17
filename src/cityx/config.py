@@ -9,13 +9,13 @@ load_dotenv()
 
 
 def _env(name: str, default: str = "") -> str:
-    return os.getenv(name, default).strip()
+    return (os.getenv(name) or os.getenv(name.lower()) or default).strip()
 
 
 @dataclass(frozen=True)
 class Settings:
     bland_api_key: str = _env("BLAND_API_KEY")
-    guest_name: str = _env("GUEST_NAME", "Alex Chen")
+    guest_name: str = _env("GUEST_NAME", "Rupinder")
     guest_phone: str = _env("GUEST_PHONE")
     receipt_email: str = _env("RECEIPT_EMAIL")
     card_note: str = _env("GUEST_CARD_NOTE", "Guarantee at check-in if a card is required.")
@@ -32,8 +32,24 @@ class Settings:
     imap_user: str = _env("IMAP_USER")
     imap_password: str = _env("IMAP_PASSWORD")
     groq_api_key: str = _env("GROQ_API_KEY")
+    elevenlabs_api_key: str = _env("ELEVENLABS_API_KEY")
+    elevenlabs_agent_id: str = _env("ELEVENLABS_AGENT_ID", "agent_3801m5571nj3f938ke1v1p3rxys2")
+    elevenlabs_phone_id: str = _env("ELEVENLABS_PHONE_NUMBER_ID", "phnum_1501m5577ynnfy69pt6vqv9xbknm")
     voice_provider: str = _env("VOICE_PROVIDER", "bland")
     max_hotels_to_try: int = int(_env("MAX_HOTELS_TO_TRY", "5") or "5")
+
+    openai_api_key: str = _env("OPENAI_API_KEY") or _env("OPEN_AI_API_KEY")
+    parse_model: str = _env("PARSE_MODEL", "gpt-5.4-mini")
+    live_calls: bool = _env("LIVE_CALLS") in {"1", "true", "yes"}
+    smtp_host: str = _env("SMTP_HOST", "smtp.gmail.com")
+    smtp_user: str = _env("SMTP_USER") or _env("GMAIL_SMTP_USER") or _env("IMAP_USER")
+    smtp_password: str = (
+        _env("SMTP_PASSWORD") or _env("GMAIL_SMTP_PASSWORD") or _env("IMAP_PASSWORD")
+    ).replace(" ", "")  # Google shows app passwords as four groups of four
+
+    @property
+    def can_email(self) -> bool:
+        return bool(self.smtp_user and self.smtp_password)
 
     @property
     def can_dial(self) -> bool:
