@@ -2,7 +2,7 @@
 
 Custom agent for the **TechTO Fast & Frugal Hackathon** (17 Oct 2026).
 
-Same task as everyone else: find the cheapest hotel in **City X**, **book it on a phone call**, and land a **receipt on the email the judges give you**. Fastest + cheapest wins.
+Same task as everyone else: find the cheapest hotel in **City X**, **book it on a phone call**, and land a **receipt on the email the judges give you**. Fastest and cheapest wins.
 
 This is not a ready-made agent framework and it does not drive a browser. It searches public APIs, ranks properties, and phones the front desks.
 
