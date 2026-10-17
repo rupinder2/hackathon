@@ -9,7 +9,7 @@ load_dotenv()
 
 
 def _env(name: str, default: str = "") -> str:
-    return os.getenv(name, default).strip()
+    return (os.getenv(name) or os.getenv(name.lower()) or default).strip()
 
 
 @dataclass(frozen=True)
@@ -32,8 +32,21 @@ class Settings:
     imap_user: str = _env("IMAP_USER")
     imap_password: str = _env("IMAP_PASSWORD")
     groq_api_key: str = _env("GROQ_API_KEY")
+    elevenlabs_api_key: str = _env("ELEVENLABS_API_KEY")
+    elevenlabs_agent_id: str = _env("ELEVENLABS_AGENT_ID", "agent_3801m5571nj3f938ke1v1p3rxys2")
+    elevenlabs_phone_id: str = _env("ELEVENLABS_PHONE_NUMBER_ID", "phnum_1501m5577ynnfy69pt6vqv9xbknm")
     voice_provider: str = _env("VOICE_PROVIDER", "bland")
     max_hotels_to_try: int = int(_env("MAX_HOTELS_TO_TRY", "5") or "5")
+
+    smtp_host: str = _env("SMTP_HOST", "smtp.gmail.com")
+    smtp_user: str = _env("SMTP_USER") or _env("GMAIL_SMTP_USER") or _env("IMAP_USER")
+    smtp_password: str = (
+        _env("SMTP_PASSWORD") or _env("GMAIL_SMTP_PASSWORD") or _env("IMAP_PASSWORD")
+    ).replace(" ", "")  # Google shows app passwords as four groups of four
+
+    @property
+    def can_email(self) -> bool:
+        return bool(self.smtp_user and self.smtp_password)
 
     @property
     def can_dial(self) -> bool:
