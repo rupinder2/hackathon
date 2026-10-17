@@ -1,23 +1,28 @@
 from __future__ import annotations
 
+import json
 import re
 import threading
+import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
 
-from .availability import cheapest
+from .availability import call_hotel, cheapest
 from .config import Settings
 from .deals import latest_saved, save_results, search_deals
 from .dispatch import CandidateFeed, run_calls
 from .intent import Intent
+from .metrics import Usage
 from .models import StayRequest
 from .notify import build_email, fetch_audio, send_email
 from .validate_results import validate_hotels
 
 HOTELS_TO_CALL = 10
+RUN_LOG = Path("logs/runs.jsonl")  # one line per finished run: time, tokens, outcome
 
 FIXTURE_HOTELS = [
     ("Maple Leaf Budget Inn", "100 Dundas St W", 119),
@@ -72,6 +77,11 @@ class Job:
     results: list[dict] = field(default_factory=list)
     rejected_items: list[dict] = field(default_factory=list)
     best: dict | None = None
+    usage: Usage = field(default_factory=Usage, repr=False)
+    started_at: float = 0.0
+    finished_at: float = 0.0
+    first_quote_at: float = 0.0
+    phase_at: dict[str, float] = field(default_factory=dict)
     _agents: dict[int, dict] = field(default_factory=dict, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -81,7 +91,22 @@ class Job:
 
     def set_phase(self, phase: str) -> None:
         with self._lock:
-            self.phase = phase
+            self.enter(phase)
+
+    def enter(self, phase: str) -> None:
+        """Switch phase and remember when it first began. Call with the lock held."""
+        self.phase = phase
+        self.phase_at.setdefault(phase, time.time())
+
+    def metrics(self) -> dict:
+        now = self.finished_at or time.time()
+        since = lambda t: round(t - self.started_at, 1)  # noqa: E731
+        return {
+            "elapsed_s": since(now) if self.started_at else 0,
+            "first_quote_s": since(self.first_quote_at) if self.first_quote_at else None,
+            "phases": {k: since(v) for k, v in self.phase_at.items()},
+            **self.usage.snapshot(),
+        }
 
     def on_event(self, event: dict) -> None:
         """Fold one dispatch event into the per-hotel table."""
@@ -91,6 +116,8 @@ class Job:
             entry["phone"] = mask_phone(event.get("phone"))
             quote = (event.get("result") or {}) if event["state"] == "ok" else None
             if quote and quote.get("total_price") is not None:
+                if not self.first_quote_at:
+                    self.first_quote_at = time.time()
                 if self.best is None or quote["total_price"] < self.best["price"]:
                     self.best = {"hotel": event["name"], "price": quote["total_price"], "room": quote.get("room_type")}
 
@@ -112,6 +139,7 @@ class Job:
                 "best": dict(self.best) if self.best else None,
                 "results": list(self.results),
                 "rejected_items": list(self.rejected_items),
+                "metrics": self.metrics(),
             }
 
 
@@ -123,6 +151,8 @@ def _redact(text: str) -> str:
 def run_job(job: Job, settings: Settings) -> None:
     job.status = "running"
     job.live = settings.live_calls
+    job.started_at = time.time()
+    job.set_phase("searching")
     try:
         _run(job, settings)
         job.status = "done"
@@ -130,7 +160,21 @@ def run_job(job: Job, settings: Settings) -> None:
         job.summary = f"Something went wrong: {_redact(str(e))}"
         job.status = "failed"
     finally:
+        job.finished_at = time.time()
         job.set_phase("done")
+        _log_run(job)
+
+
+def _log_run(job: Job) -> None:
+    """Append the run's time and token totals to logs/runs.jsonl; never fail the job over it."""
+    try:
+        RUN_LOG.parent.mkdir(parents=True, exist_ok=True)
+        line = {"job": job.id, "city": job.intent.city, "live": job.live, "status": job.status,
+                "validated": job.validated_total, "best": job.best, **job.metrics()}
+        with RUN_LOG.open("a") as f:
+            f.write(json.dumps(line) + "\n")
+    except OSError:
+        pass
 
 
 def _compact(row: dict) -> dict:
@@ -159,7 +203,6 @@ def _run(job: Job, settings: Settings) -> None:
         "adults": i.adults, "budget": i.budget, "currency": i.currency, "live": live,
     }
 
-    job.set_phase("searching")
     job.log(f"Searching stays in {i.city}")
     call_cap = settings.call_limit or HOTELS_TO_CALL
     feed = CandidateFeed()
@@ -180,7 +223,7 @@ def _run(job: Job, settings: Settings) -> None:
             else:
                 seen_phones.add(r.get("phone"))
                 fresh.append(r)
-        report = validate_hotels(fresh, i, settings, query=job.query or "", on_progress=job.log)
+        report = validate_hotels(fresh, i, settings, query=job.query or "", on_progress=job.log, usage=job.usage)
         good = report.valid
         if settings.call_limit:  # test mode: dial only the first few, optionally at a planted number
             good = good[: max(settings.call_limit - len(valid), 0)]
@@ -196,7 +239,7 @@ def _run(job: Job, settings: Settings) -> None:
             job.results = [_compact(r) for r in valid]
             job.rejected_items = [{**_compact(x["row"]), "reason": x["reason"]} for x in rejected]
             if first:
-                job.phase = "calling"
+                job.enter("calling")
         if first:
             job.log(
                 "Calling the cheapest hotels at the same time while the search carries on"
@@ -261,8 +304,15 @@ def _run(job: Job, settings: Settings) -> None:
         send_email(msg, settings)
         job.log(f"Emailed the first quote ({av.hotel.name}, {av.total_price:.0f} {i.currency}) to {job.email}")
 
+    def counted_call(*args, **kwargs):
+        av = call_hotel(*args, **kwargs)
+        job.usage.add_conversation(av.raw)  # every attempt counts, including the ones that fail
+        return av
+
     try:
-        results = run_calls(stay, feed, settings, live=live, on_event=job.on_event, on_result=email_first_quote)
+        results = run_calls(
+            stay, feed, settings, live=live, on_event=job.on_event, on_result=email_first_quote, call_fn=counted_call
+        )
     finally:
         stop.set()  # enough hotels were called; don't spend more SearchAPI lookups
         searcher.join()

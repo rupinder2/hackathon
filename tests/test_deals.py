@@ -174,3 +174,36 @@ def test_far_properties_skipped_before_phone_lookup(monkeypatch):
                               client=_client(_handler({None: {"properties": props}}, details, calls)))
     assert "f" not in [c.get("property_token") for c in calls]  # no credit spent on it
     assert [r["name"] for r in rows] == ["Near", "Mid"]  # within $30 of 130? 150-130=20, so closest first
+
+
+def test_city_center_ignores_geocode_far_from_the_hotels(monkeypatch):
+    # "Vancover" geocodes to Las Vegas, but Google returned Vancouver hotels
+    monkeypatch.setattr(deals, "geocode_city", lambda c: (36.29, -115.29, "Las Vegas"))
+    props = [{"gps_coordinates": {"latitude": 49.28 + i * 0.001, "longitude": -123.12}} for i in range(5)]
+    lat, lon = deals._city_center("Vancover", props, lambda _m: None)
+    assert 49 < lat < 50 and lon == -123.12
+
+
+def test_429_honours_retry_after_and_pauses_every_worker(monkeypatch):
+    slept = []
+    monkeypatch.setattr(deals.time, "sleep", slept.append)
+    monkeypatch.setattr(deals, "RETRY_DELAY", 0)
+    monkeypatch.setitem(deals._cooldown, "until", 0.0)
+    n = {"c": 0}
+
+    def h(req):
+        n["c"] += 1
+        if n["c"] == 1:
+            return httpx.Response(429, headers={"Retry-After": "7"})
+        return httpx.Response(200, json={"ok": 1})
+
+    assert deals._get(_client(h), {}) == {"ok": 1}
+    # the 7s wait went into the shared cooldown, so a second worker would wait it out too
+    assert deals._cooldown["until"] > deals.time.monotonic() + 5
+    assert slept and 5 < slept[-1] <= 7
+
+
+def test_429_backoff_grows_and_is_capped(monkeypatch):
+    monkeypatch.setattr(deals.random, "uniform", lambda a, b: 0)
+    assert [deals._backoff(i) for i in range(4)] == [1.5, 3.0, 6.0, 12.0]
+    assert deals._backoff(10) == deals.MAX_BACKOFF

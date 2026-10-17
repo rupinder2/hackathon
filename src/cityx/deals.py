@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import re
 import statistics
 import threading
@@ -30,8 +31,9 @@ from .stays_db import connect, upsert_stay
 API_URL = "https://www.searchapi.io/api/v1/search"
 DATA_DIR = Path("data/searches")
 MAX_WORKERS = 4  # SearchAPI answers 429 above this
-RETRY_DELAY = 1.5  # seconds; grows with each attempt
-ATTEMPTS = 4
+RETRY_DELAY = 1.5  # seconds; doubles with each attempt, plus jitter
+MAX_BACKOFF = 20.0
+ATTEMPTS = 6
 SUSPICIOUS_RATIO = 0.5  # a price under half the median is probably a bad listing
 MIN_ROWS_FOR_MEDIAN = 5
 MAX_KM = 30  # hotels farther from the city centre than this are never looked up
@@ -39,6 +41,9 @@ PRICE_BAND = 30.0  # a farther hotel only outranks a closer one if it is cheaper
 WANT_ROWS = 25  # enough validated candidates to call 10 hotels plus replacements
 
 Progress = Callable[[str], None]
+
+_cooldown = {"until": 0.0}  # monotonic time before which no worker calls SearchAPI (set by a 429)
+_cooldown_lock = threading.Lock()
 
 
 def search_deals(
@@ -164,13 +169,18 @@ def proximity_order(rows: list[dict], band: float = PRICE_BAND) -> list[dict]:
 
 
 def _city_center(city: str, props: list[dict], say: Progress) -> tuple[float, float] | None:
+    pts = [c for c in map(_coords, props) if c]
+    cluster = (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts)) if len(pts) >= 3 else None
     try:
         lat, lon, _ = geocode_city(city)
-        return lat, lon
     except Exception as e:  # Nominatim down or no match: fall back to where the hotels cluster
         say(f"Could not geocode {city} ({type(e).__name__}); using the middle of the hotel list")
-    pts = [c for c in map(_coords, props) if c]
-    return (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts)) if len(pts) >= 3 else None
+        return cluster
+    # Nominatim fuzzy-matches typos to unrelated places ("Vancover" -> Las Vegas); Google's list is the truth
+    if cluster and _km((lat, lon), cluster) > MAX_KM:
+        say(f"Geocoded {city} is far from the hotels Google returned; using the middle of the hotel list")
+        return cluster
+    return lat, lon
 
 
 def _within_range(props: list[dict], center: tuple[float, float] | None, nights: int, say: Progress) -> list[dict]:
@@ -333,22 +343,53 @@ def _label(label: str | None, value: float, currency: str) -> str:
 
 
 def _get(client: httpx.Client, params: dict) -> dict:
-    """GET with backoff retries on 429/5xx or a network error."""
+    """GET with backoff retries on 429/5xx or a network error.
+
+    A 429 pauses every worker (shared cooldown), not just this one, so the pool stops hammering a
+    rate-limited API; the wait honours Retry-After, else grows exponentially with jitter.
+    """
     for attempt in range(ATTEMPTS):
         last = attempt == ATTEMPTS - 1
+        _wait_cooldown()
+        delay = _backoff(attempt)
         try:
             response = client.get(API_URL, params=params)
         except httpx.TransportError:
             if last:
                 raise
         else:
-            if (response.status_code == 429 or response.status_code >= 500) and not last:
+            if response.status_code == 429 and not last:
+                _start_cooldown(_retry_after(response) or delay)
+                continue
+            if response.status_code >= 500 and not last:
                 pass
             else:
                 response.raise_for_status()
                 return response.json()
-        time.sleep(RETRY_DELAY * (attempt + 1))
+        time.sleep(delay)
     raise AssertionError("unreachable")
+
+
+def _backoff(attempt: int) -> float:
+    return min(MAX_BACKOFF, RETRY_DELAY * 2**attempt + random.uniform(0, RETRY_DELAY))
+
+
+def _retry_after(response: httpx.Response) -> float | None:
+    try:
+        return min(MAX_BACKOFF, float(response.headers.get("Retry-After", "")))
+    except ValueError:
+        return None
+
+
+def _start_cooldown(seconds: float) -> None:
+    with _cooldown_lock:
+        _cooldown["until"] = max(_cooldown["until"], time.monotonic() + seconds)
+
+
+def _wait_cooldown() -> None:
+    wait = _cooldown["until"] - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
 
 
 def main() -> None:

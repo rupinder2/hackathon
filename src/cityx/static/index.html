@@ -6,368 +6,413 @@
 <title>Cheapest Hotel Caller</title>
 <style>
   :root {
-    --bg: #f6f7f9; --card: #fff; --text: #14181f; --muted: #5d6675; --line: #dfe3ea;
-    --accent: #2457f5; --accent-text: #fff; --ok: #137a3f; --warn-bg: #fff5e0; --warn: #8a5a00; --err: #b3261e;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0f1218; --card: #181c24; --text: #eef1f6; --muted: #9aa3b2; --line: #2a303b;
-      --accent: #6f93ff; --accent-text: #0b1020; --ok: #4cc380; --warn-bg: #2b2412; --warn: #f0c36b; --err: #ff8a80;
-    }
+    --text: #1d2233; --muted: #6b7288; --line: rgba(120, 130, 170, .18);
+    --glass: rgba(255, 255, 255, .62); --glass-strong: rgba(255, 255, 255, .85);
+    --accent: #6a5cff; --accent2: #22c1c3; --ok: #1a9e5c; --ok-bg: rgba(26, 158, 92, .12);
+    --err: #d6453d; --err-bg: rgba(214, 69, 61, .1); --amber: #c27a00; --amber-bg: rgba(255, 176, 32, .16);
+    color-scheme: light;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 920px; margin: 0 auto; padding: 32px 16px 64px; }
-  h1 { font-size: 1.6rem; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 24px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
-  label { display: block; font-weight: 600; font-size: .9rem; margin: 0 0 6px; }
-  textarea, input { width: 100%; padding: 12px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
-  textarea { min-height: 96px; resize: vertical; }
-  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .field { margin-bottom: 16px; }
-  .hint { color: var(--muted); font-size: .85rem; margin-top: 6px; }
-  button { font: inherit; font-weight: 600; padding: 12px 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
-  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-  button:disabled { opacity: .55; cursor: default; }
-  .row { display: flex; gap: 10px; flex-wrap: wrap; }
-  .bubble { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 14px; }
-  .bubble.err { border-color: var(--err); }
-  .banner { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: .9rem; }
-  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 16px; }
-  dt { color: var(--muted); } dd { margin: 0; font-weight: 600; }
-  ol.steps { list-style: none; padding: 0; margin: 0 0 12px; }
-  ol.steps li { padding: 6px 0 6px 26px; position: relative; }
-  ol.steps li::before { content: "✓"; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
-  ol.steps li.active::before { content: "…"; color: var(--muted); }
+  html, body { height: 100%; }
+  body {
+    margin: 0; color: var(--text); font: 16px/1.5 "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #eef0fb; overflow: hidden;
+  }
+  /* soft drifting background */
+  .bg { position: fixed; inset: 0; z-index: 0; overflow: hidden;
+    background: linear-gradient(135deg, #f1eefe 0%, #e8f4fb 45%, #fdeff3 100%); }
+  .bg i { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55; animation: drift 22s ease-in-out infinite alternate; }
+  .bg i:nth-child(1) { width: 46vmax; height: 46vmax; left: -12vmax; top: -14vmax; background: #c9c1ff; }
+  .bg i:nth-child(2) { width: 40vmax; height: 40vmax; right: -10vmax; top: 10vh; background: #b5ecf0; animation-delay: -7s; }
+  .bg i:nth-child(3) { width: 38vmax; height: 38vmax; left: 25vw; bottom: -18vmax; background: #ffd3e0; animation-delay: -13s; }
+  .bg::after { content: ""; position: absolute; inset: 0;
+    background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 56px 56px; mask-image: radial-gradient(ellipse at center, #000 0%, transparent 70%); opacity: .5; }
+
+  .wrap { position: relative; z-index: 1; height: 100%; display: flex; align-items: center; justify-content: center; padding: 20px 16px; }
+  .box {
+    width: 100%; max-width: 760px; height: min(100%, 880px); display: flex; flex-direction: column;
+    background: var(--glass); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    border: 1px solid rgba(255, 255, 255, .8); border-radius: 28px;
+    box-shadow: 0 30px 80px -20px rgba(80, 70, 160, .28), 0 2px 0 rgba(255, 255, 255, .6) inset;
+    overflow: hidden;
+  }
+  header { display: flex; align-items: center; gap: 12px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  .logo { width: 34px; height: 34px; border-radius: 11px; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: grid; place-items: center; color: #fff; }
+  header h1 { font-size: 1rem; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  header p { margin: 0; font-size: .78rem; color: var(--muted); }
+  .pills { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .pill.clock { background: rgba(106, 92, 255, .12); color: var(--accent); font-variant-numeric: tabular-nums; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 12px; }
+  .stat { background: rgba(255, 255, 255, .75); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+  .stat b { display: block; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .pill { font-size: .72rem; font-weight: 650; padding: 4px 10px; border-radius: 999px; background: var(--amber-bg); color: var(--amber); white-space: nowrap; }
+
+  .feed { flex: 1; overflow-y: auto; padding: 22px 22px 8px; scroll-behavior: smooth; display: flex; flex-direction: column; gap: 16px; }
+  .feed > * { flex-shrink: 0; }
+  .feed::-webkit-scrollbar { width: 8px; } .feed::-webkit-scrollbar-thumb { background: rgba(120, 130, 170, .3); border-radius: 8px; }
+
+  .msg { max-width: 88%; padding: 11px 15px; border-radius: 18px; animation: rise .4s ease-out both; overflow-wrap: anywhere; }
+  .msg.bot { background: var(--glass-strong); border: 1px solid var(--line); border-bottom-left-radius: 6px; align-self: flex-start; }
+  .msg.bot.err { border-color: rgba(214, 69, 61, .4); }
+  .msg.me { background: linear-gradient(135deg, var(--accent), #8a6bff); color: #fff; border-bottom-right-radius: 6px; align-self: flex-end; }
+  .msg.me small { display: block; opacity: .75; font-size: .78rem; margin-top: 2px; }
+
+  /* stage = one scene in the flow */
+  .stage { background: var(--glass-strong); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; animation: rise .5s ease-out both; }
+  .stage .art { position: relative; height: 170px; overflow: hidden; background: linear-gradient(180deg, #e9e6ff 0%, #dff4fb 100%); }
+  .stage .art svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .stage .art .over { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; padding: 0 16px; }
+  .stage .body { padding: 14px 18px 16px; }
+  .eyebrow { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+  .eyebrow .tick { width: 16px; height: 16px; border-radius: 50%; background: var(--ok); color: #fff; display: none; place-items: center; font-size: .65rem; }
+  .stage.done .eyebrow { color: var(--ok); } .stage.done .eyebrow .tick { display: grid; }
+  .stage.done .live { display: none; }
+  .live { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+  .big { font-size: 1.25rem; font-weight: 650; letter-spacing: -.01em; margin: 4px 0 2px; }
+  .sub { color: var(--muted); font-size: .9rem; }
+  .hero-name { display: inline-block; background: rgba(255, 255, 255, .85); backdrop-filter: blur(6px); padding: 6px 16px; border-radius: 999px; font-weight: 650; font-size: 1.05rem; box-shadow: 0 6px 20px -8px rgba(80, 70, 160, .4); animation: swap .45s ease-out both; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hero-sub { font-size: .78rem; color: #4a4f6a; margin-top: 6px; font-weight: 600; }
+
+  /* radar + signal art */
+  .sweep { transform-origin: 300px 150px; animation: spin 3.2s linear infinite; }
+  .ring { fill: none; stroke: rgba(106, 92, 255, .25); stroke-width: 1; }
+  .ping { animation: ping 2.4s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  .wave rect { fill: var(--accent); animation: wave .9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .stage.done .art * { animation-play-state: paused; }
+  .env { animation: floaty 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .dash { stroke-dasharray: 6 8; animation: dashmove 1s linear infinite; }
+
+  /* calls list inside the calling stage */
+  .best { background: var(--ok-bg); color: var(--ok); border-radius: 12px; padding: 9px 13px; margin-bottom: 10px; font-weight: 650; font-size: .92rem; }
+  .calls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
+  .row { display: grid; grid-template-columns: 54px 1fr; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 14px; background: rgba(255, 255, 255, .72); border: 1px solid var(--line); animation: rise .35s ease-out both; min-width: 0; transition: border-color .3s, opacity .3s, background .3s; }
+  .row .ico { width: 54px; height: 54px; border-radius: 12px; background: linear-gradient(160deg, #ece9ff, #dff4fb); display: grid; place-items: center; overflow: hidden; }
+  .row .ico svg { width: 46px; height: 46px; animation: swap .35s ease-out both; }
+  .row .mid { min-width: 0; }
+  .row .nm { font-weight: 600; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .nt { font-size: .72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: .76rem; font-weight: 650; background: rgba(120, 130, 170, .14); color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row.s-dialing .chip, .row.s-in_call .chip, .row.s-analyzing .chip { background: rgba(106, 92, 255, .12); color: var(--accent); }
+  .row.s-in_call { border-color: rgba(106, 92, 255, .45); background: rgba(255, 255, 255, .92); }
+  .row.s-retrying .chip { background: var(--amber-bg); color: var(--amber); }
+  .row.s-ok { border-color: rgba(26, 158, 92, .5); } .row.s-ok .chip { background: var(--ok-bg); color: var(--ok); }
+  .row.s-ok .ico { background: linear-gradient(160deg, #d9f5e6, #e8f9f0); }
+  .row.s-no_room { opacity: .7; }
+  .row.s-failed { opacity: .65; border-color: rgba(214, 69, 61, .35); } .row.s-failed .chip { background: var(--err-bg); color: var(--err); }
+  .row.s-failed .ico { background: linear-gradient(160deg, #fde8e6, #fff1ef); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+  .s-dialing .dot, .s-retrying .dot, .s-in_call .dot { animation: pulse 1s ease-in-out infinite; }
+  .ico .ring2 { fill: none; stroke: #6a5cff; stroke-width: 2; animation: ping 1.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  .ico .spin { transform-origin: 24px 24px; animation: spin 1s linear infinite; }
+  .ico .bar { fill: #6a5cff; animation: wave .8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  @media (max-width: 560px) { .calls { grid-template-columns: 1fr; } }
+
   .result { font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .92rem; }
-  td { padding: 6px 0; border-top: 1px solid var(--line); } td:last-child { text-align: right; font-weight: 600; }
-  #ask, #confirm { max-width: 640px; margin-left: auto; margin-right: auto; }
-  h1, .sub, .banner { max-width: 640px; margin-left: auto; margin-right: auto; }
-  [hidden] { display: none !important; }
-  /* progress view */
-  :root { --chip: #eef0f4; --amber: #b86e00; --amber-bg: #fff1d6; --ok-bg: #e2f4ea; --err-bg: #fde8e6; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --chip: #242a35; --amber: #f0c36b; --amber-bg: #2b2412; --ok-bg: #12301f; --err-bg: #34191a; } }
-  .stepper { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0 0 14px; flex-wrap: wrap; }
-  .stepper li { flex: 1 1 100px; text-align: center; padding: 8px 6px; border-radius: 10px; background: var(--chip); color: var(--muted); font-size: .85rem; font-weight: 600; border: 1px solid transparent; transition: background .3s, color .3s; }
-  .stepper li.done { background: var(--ok-bg); color: var(--ok); }
-  .stepper li.current { background: var(--card); color: var(--accent); border-color: var(--accent); animation: glow 1.4s ease-in-out infinite; }
-  .counts { font-weight: 600; margin: 0 0 12px; min-height: 1.5em; }
-  .best { background: var(--ok-bg); color: var(--ok); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-weight: 600; transition: transform .3s; }
-  .best.bump { transform: scale(1.02); }
-  #grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
-  .slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .hc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; grid-template-columns: 28px 1fr; gap: 2px 10px; transition: background .3s, border-color .3s, opacity .3s; animation: slidein .35s ease-out; }
-  .hc .rank { grid-row: span 3; width: 26px; height: 26px; border-radius: 50%; background: var(--chip); font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; color: var(--muted); }
-  .hc .nm { font-weight: 600; overflow-wrap: anywhere; }
-  .hc .ad { color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
-  .hc .meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-  .hc .pr { font-size: .85rem; color: var(--muted); }
-  .hc .tag { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; background: var(--chip); color: var(--muted); transition: background .3s, color .3s; }
-  .hc.s-dialing .chip, .hc.s-in_call .chip, .hc.s-analyzing .chip { background: var(--card); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .hc.s-retrying .chip { background: var(--amber-bg); color: var(--amber); }
-  .hc.s-ok { border-color: var(--ok); } .hc.s-ok .chip { background: var(--ok-bg); color: var(--ok); }
-  .hc.s-no_room { opacity: .75; }
-  .hc.s-failed { border-color: var(--err); opacity: .8; } .hc.s-failed .chip { background: var(--err-bg); color: var(--err); }
-  .hc.replaced { opacity: .55; }
-  .ind { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-  .hc.s-dialing .ind, .hc.s-retrying .ind { animation: pulse 1s ease-in-out infinite; }
-  .hc.s-in_call .ind { width: 14px; height: 12px; background: none; display: inline-flex; align-items: flex-end; gap: 2px; }
-  .hc.s-in_call .ind i { width: 3px; background: currentColor; border-radius: 2px; animation: wave .9s ease-in-out infinite; height: 100%; }
-  .hc.s-in_call .ind i:nth-child(2) { animation-delay: .15s; } .hc.s-in_call .ind i:nth-child(3) { animation-delay: .3s; }
-  .hc.s-analyzing .ind { width: 12px; height: 12px; background: none; border: 2px solid currentColor; border-top-color: transparent; animation: spin .8s linear infinite; }
-  .hc .note { grid-column: 2; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
-  details.list { margin-top: 10px; } details.list summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
-  details.list.dim { opacity: .65; }
-  .row2 { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: .9rem; }
-  .row2 span:last-child { text-align: right; color: var(--muted); }
-  .badge { display: inline-block; font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); margin-left: 6px; vertical-align: middle; }
-  @keyframes pulse { 50% { opacity: .25; transform: scale(.8); } }
-  @keyframes wave { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+  .more { margin-top: 10px; font-size: .88rem; } .more summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+  .more .li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--line); color: var(--muted); }
+
+  /* composer */
+  form { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--line); background: rgba(255, 255, 255, .5); }
+  .bar { display: flex; gap: 8px; align-items: flex-end; }
+  textarea, input { font: inherit; color: var(--text); background: rgba(255, 255, 255, .9); border: 1px solid var(--line); border-radius: 14px; padding: 11px 14px; width: 100%; resize: none; transition: border-color .2s, box-shadow .2s; }
+  textarea { min-height: 46px; max-height: 120px; }
+  input { padding: 9px 14px; font-size: .9rem; }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(106, 92, 255, .14); }
+  button { font: inherit; font-weight: 650; border: 0; border-radius: 14px; height: 46px; padding: 0 20px; color: #fff; cursor: pointer; white-space: nowrap;
+    background: linear-gradient(135deg, var(--accent), #8a6bff); box-shadow: 0 8px 20px -8px rgba(106, 92, 255, .7); transition: transform .15s, opacity .2s; }
+  button:hover:not(:disabled) { transform: translateY(-1px); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+  @keyframes swap { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+  @keyframes pulse { 50% { opacity: .3; transform: scale(.75); } }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes glow { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); } }
-  @keyframes slidein { from { opacity: 0; transform: translateY(8px); } }
-  @media (max-width: 640px) { #grid { grid-template-columns: 1fr; } }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  @keyframes ping { 0% { transform: scale(.4); opacity: 1; } 100% { transform: scale(2.6); opacity: 0; } }
+  @keyframes wave { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+  @keyframes floaty { 50% { transform: translateY(-8px) rotate(-2deg); } }
+  @keyframes dashmove { to { stroke-dashoffset: -28; } }
+  @keyframes drift { to { transform: translate(6vmax, 4vmax) scale(1.08); } }
+  @media (max-width: 560px) {
+    .wrap { padding: 0; } .box { border-radius: 0; height: 100%; max-width: none; border: 0; }
+    .msg { max-width: 95%; } .feed { padding: 16px 14px 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 </style>
 </head>
 <body>
-<main>
-  <h1>Cheapest hotel, booked by phone</h1>
-  <p class="sub">Tell me where, when and your budget. I call the hotels for you and email what you need to book.</p>
-  <div id="banner" class="banner" hidden>Demo mode: I'll find hotels but won't place any calls or send emails.</div>
-
-  <section id="ask" class="card">
-    <div class="field">
-      <label for="msg">What are you looking for?</label>
-      <textarea id="msg" placeholder="Cheapest hotel in Toronto this Saturday for one night, under $200"></textarea>
+<div class="bg"><i></i><i></i><i></i></div>
+<div class="wrap">
+<main class="box">
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>
     </div>
-    <div class="field">
-      <label for="email">Your email</label>
-      <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
-      <div class="hint">I'll send the booking details here.</div>
-    </div>
-    <button id="go" class="primary">Find my hotel</button>
-    <div id="reply" class="bubble" hidden></div>
-  </section>
+    <div><h1>Cheapest hotel, by phone</h1><p>I call the front desks so you don't have to.</p></div>
+    <div class="pills"><span id="clock" class="pill clock" hidden></span><span id="demo" class="pill" hidden>Demo · simulated calls</span></div>
+  </header>
 
-  <section id="confirm" class="card" hidden>
-    <strong>Here's what I understood</strong>
-    <dl id="facts" style="margin-top:12px"></dl>
-    <div class="row">
-      <button id="start" class="primary">Call the hotels</button>
-      <button id="edit">Change something</button>
-    </div>
-    <div id="startErr" class="bubble err" hidden></div>
-  </section>
+  <div id="feed" class="feed" aria-live="polite">
+    <div class="msg bot" id="intro">Where and when do you need a room? I'll find the cheapest one, phone the hotels, and email you the details.</div>
+  </div>
 
-  <section id="progress" hidden>
-    <ol id="stepper" class="stepper"></ol>
-    <p id="counts" class="counts"></p>
-    <div id="best" class="best" hidden></div>
-    <div id="grid"></div>
-    <div id="result" class="card result" hidden></div>
-    <details id="logbox" class="list"><summary>Activity</summary><ol id="steps" class="steps"></ol></details>
-    <details id="allbox" class="list" hidden><summary id="allsum"></summary><div id="alllist"></div></details>
-    <details id="rejbox" class="list dim" hidden><summary id="rejsum"></summary><div id="rejlist"></div></details>
-    <div style="margin-top:16px"><button id="again" hidden>Start another search</button></div>
-  </section>
+  <form id="composer" autocomplete="on">
+    <div class="bar">
+      <textarea id="msg" rows="1" placeholder="Cheapest hotel in Toronto this Saturday for one night, under $200" required></textarea>
+      <button id="go" type="submit">Find</button>
+    </div>
+    <input id="email" type="email" autocomplete="email" placeholder="Email for the booking details (you@example.com)" required>
+  </form>
 </main>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
-let parsed = null, email = "", query = "", pollTimer = null, live = false;
+const feed = $("feed");
+let pollTimer = null, live = false, parsed = null, email = "", busy = false;
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-const post = (url, body) =>
-  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-    .then(async (r) => ({ status: r.status, data: await r.json().catch(() => ({})) }));
-
-function say(el, text, isErr) {
-  el.textContent = text; el.hidden = false; el.classList.toggle("err", !!isErr);
-}
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const html = (cls, markup) => { const d = el("div", cls); d.innerHTML = markup; return d; };
 const money = (n, c) => new Intl.NumberFormat(undefined, { style: "currency", currency: c || "CAD", maximumFractionDigits: 0 }).format(n);
-const day = (s) => new Date(s + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  .then(async (r) => ({ status: r.status, data: await r.json().catch(() => ({})) }));
+const fmtDur = (s) => { s = Math.round(s || 0); return s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${s}s`; };
+const fmtTok = (n) => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n || 0);
+const toBottom = () => requestAnimationFrame(() => { feed.scrollTop = feed.scrollHeight; });
+const add = (node) => { feed.append(node); toBottom(); return node; };
+const bot = (text, err) => add(el("div", "msg bot" + (err ? " err" : ""), text));
+
+try { $("email").value = localStorage.getItem("cityx.email") || ""; } catch (e) {}
 
 fetch("/api/config").then((r) => r.json()).then((c) => {
-  live = c.live; $("banner").hidden = c.live;
+  live = c.live; $("demo").hidden = c.live;
   if (c.example) $("msg").placeholder = c.example.replace(/^Try something like: /, "").replace(/[“”]/g, "");
 }).catch(() => {});
 
-$("go").onclick = async () => {
-  $("reply").hidden = true;
-  email = $("email").value.trim(); query = $("msg").value.trim();
-  $("go").disabled = true; $("go").textContent = "Reading your request…";
+$("msg").addEventListener("input", (e) => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; });
+$("msg").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("composer").requestSubmit(); } });
+
+function setBusy(b) { busy = b; $("go").disabled = b; $("msg").disabled = b; $("email").disabled = b; $("go").textContent = b ? "Working…" : "Find"; }
+
+$("composer").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (busy) return;
+  const query = $("msg").value.trim(); email = $("email").value.trim();
+  if (!query) return;
+  try { localStorage.setItem("cityx.email", email); } catch (e) {}
+  add(html("msg me", "")).replaceChildren(document.createTextNode(query), Object.assign(el("small"), { textContent: "→ " + email }));
+  setBusy(true);
   try {
-    const { data } = await post("/api/parse", { message: $("msg").value, email });
-    if (!data.ok) return say($("reply"), data.message || "Something went wrong. Please try again.", false);
-    parsed = data.intent;
-    const i = parsed, rows = [
-      ["Where", i.city],
-      ["Dates", `${day(i.check_in)} → ${day(i.check_out)} (${i.nights} night${i.nights > 1 ? "s" : ""})`],
-      ["Guests", i.adults],
-      ["Budget", i.budget ? `up to ${money(i.budget, i.currency)} total` : "no limit"],
-      ["Email details to", email],
-    ];
-    $("facts").replaceChildren(...rows.flatMap(([k, v]) => {
-      const dt = document.createElement("dt"), dd = document.createElement("dd");
-      dt.textContent = k; dd.textContent = v; return [dt, dd];
-    }));
-    $("ask").hidden = true; $("confirm").hidden = false;
+    const { data: p } = await post("/api/parse", { message: query, email });
+    if (!p.ok) { bot(p.message || "Something went wrong. Please try again.", false); setBusy(false); return; }
+    parsed = p.intent;
+    const { data: j } = await post("/api/jobs", { email, ...parsed, query });
+    if (!j.ok) { bot(j.message || "Couldn't start the search.", true); setBusy(false); return; }
+    $("msg").value = ""; $("msg").style.height = "auto";
+    startFlow(j.job_id);
   } catch (e) {
-    say($("reply"), "I couldn't reach the server. Check your connection and try again.", true);
-  } finally {
-    $("go").disabled = false; $("go").textContent = "Find my hotel";
+    bot("I couldn't reach the server. Check your connection and try again.", true);
+    setBusy(false);
   }
+});
+
+/* ---------- scenes ---------- */
+const SKYLINE = '<path d="M0 170 V120 h30 V90 h26 V130 h20 V70 h30 V125 h24 V100 h34 V135 h22 V60 h28 V120 h30 V95 h26 V130 h24 V80 h32 V125 h20 V105 h30 V140 h24 V75 h30 V120 h26 V100 h28 V135 h22 V90 h30 V125 h24 V110 h30 V170 Z" fill="rgba(106,92,255,.16)"/><path d="M0 170 V140 h40 V115 h24 V145 h30 V105 h28 V140 h26 V120 h32 V150 h24 V100 h26 V140 h30 V125 h30 V150 h26 V110 h30 V145 h24 V130 h32 V150 h30 V120 h28 V150 h22 V135 h34 V170 Z" fill="rgba(34,193,195,.22)"/>';
+
+function searchArt() {
+  const pins = [[120, 90], [210, 120], [380, 80], [470, 118], [300, 60], [540, 95]].map(([x, y], i) =>
+    `<g><circle class="ping" cx="${x}" cy="${y}" r="6" fill="#6a5cff" style="animation-delay:${i * .4}s"/><circle cx="${x}" cy="${y}" r="4" fill="#6a5cff"/></g>`).join("");
+  return `<svg viewBox="0 0 600 170" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs><linearGradient id="sw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6a5cff" stop-opacity="0"/><stop offset="1" stop-color="#6a5cff" stop-opacity=".45"/></linearGradient></defs>
+    ${SKYLINE}
+    <circle class="ring" cx="300" cy="150" r="60"/><circle class="ring" cx="300" cy="150" r="120"/><circle class="ring" cx="300" cy="150" r="180"/><circle class="ring" cx="300" cy="150" r="240"/>
+    <path class="sweep" d="M300 150 L300 -90 A240 240 0 0 1 470 -20 Z" fill="url(#sw)"/>
+    ${pins}</svg>`;
+}
+function callArt() {
+  const bars = Array.from({ length: 21 }, (_, i) => {
+    const h = 22 + Math.abs(Math.sin(i * 1.3)) * 46;
+    return `<rect x="${150 + i * 14}" y="${62 - h / 2}" width="6" height="${h}" rx="3" style="animation-delay:${(i % 7) * .12}s"/>`;
+  }).join("");
+  return `<svg viewBox="0 0 600 170" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    ${SKYLINE}
+    <path class="dash" d="M70 62 Q300 -10 530 62" fill="none" stroke="#6a5cff" stroke-opacity=".5" stroke-width="2"/>
+    <circle cx="70" cy="62" r="16" fill="#fff"/><circle cx="530" cy="62" r="16" fill="#fff"/>
+    <circle cx="70" cy="62" r="6" fill="#22c1c3"/><circle cx="530" cy="62" r="6" fill="#6a5cff"/>
+    <g class="wave">${bars}</g></svg>`;
+}
+function mailArt() {
+  return `<svg viewBox="0 0 600 170" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    ${SKYLINE}
+    <path class="dash" d="M60 130 Q220 20 360 70" fill="none" stroke="#6a5cff" stroke-opacity=".5" stroke-width="2"/>
+    <g class="env"><rect x="330" y="40" width="130" height="86" rx="12" fill="#fff" stroke="#6a5cff" stroke-width="2"/>
+    <path d="M334 46 L395 92 L456 46" fill="none" stroke="#6a5cff" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="456" cy="124" r="16" fill="#1a9e5c"/><path d="M449 124 l5 5 l9 -10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g></svg>`;
+}
+
+/* ---------- flow ---------- */
+const PHASE_ORDER = ["searching", "validating", "calling", "emailing", "done"];
+let stages = {}, rows = new Map(), lastHero = "", shownLists = {};
+
+function stage(key, eyebrow, art) {
+  if (stages[key]) return stages[key];
+  const s = el("section", "stage");
+  s.innerHTML = `<div class="art">${art}<div class="over"></div></div><div class="body"><div class="eyebrow"><span class="live"></span><span class="tick">✓</span><span class="lab"></span></div><div class="big"></div><div class="sub"></div><div class="extra"></div></div>`;
+  s.querySelector(".lab").textContent = eyebrow;
+  s._ = { over: s.querySelector(".over"), big: s.querySelector(".big"), sub: s.querySelector(".sub"), extra: s.querySelector(".extra") };
+  stages[key] = s; add(s); return s;
+}
+const finish = (key) => stages[key] && stages[key].classList.add("done");
+
+function startFlow(id) {
+  stages = {}; rows = new Map(); lastHero = ""; shownLists = {};
+  poll(id);
+}
+
+function renderSearch(j) {
+  const s = stage("search", "1 · Searching hotels", searchArt());
+  const city = parsed ? parsed.city : "your city";
+  if (!j.search_total) { s._.big.textContent = `Scanning ${city}…`; s._.sub.textContent = "Looking for stays with a front-desk phone number."; return; }
+  s._.big.textContent = `${j.search_total} stays found in ${city}`;
+  s._.sub.textContent = j.phase === "searching" || j.phase === "validating"
+    ? `${j.validated_total} passed checks so far…`
+    : `${j.validated_total} passed checks · calling the ${Math.min(10, j.validated_total)} cheapest`;
+  fillList(s._.extra, "all", "Search results", j.results, (r) => r.listed_price || "");
+  fillList(s._.extra, "rej", "Rejected", j.rejected_items, (r) => r.reason);
+}
+
+function fillList(host, key, label, items, extra) {
+  let d = host.querySelector(`[data-k="${key}"]`);
+  if (!items.length) { if (d) d.remove(); return; }
+  if (!d) { d = el("details", "more"); d.dataset.k = key; d.append(el("summary"), el("div")); host.append(d); }
+  d.firstChild.textContent = `${label} (${items.length})`;
+  if (shownLists[key] === items.length) return;
+  shownLists[key] = items.length;
+  d.lastChild.replaceChildren(...items.map((r) => {
+    const l = el("div", "li"); l.append(el("span", "", r.name + (r.address ? " · " + r.address : "")), el("span", "", extra(r))); return l;
+  }));
+}
+
+const PH = '<path d="M33 36.5v2.2a1.5 1.5 0 0 1-1.6 1.5A15 15 0 0 1 8 17.2 1.5 1.5 0 0 1 9.4 15.6h2.2a1.5 1.5 0 0 1 1.5 1.3c.1.8.3 1.5.5 2.2a1.5 1.5 0 0 1-.4 1.6l-.9.9a12 12 0 0 0 6 6l.9-.9a1.5 1.5 0 0 1 1.6-.3c.7.2 1.5.4 2.2.5a1.5 1.5 0 0 1 1.3 1.5z" transform="translate(4 -6) scale(.9)"';
+const MINI = {
+  queued: `<svg viewBox="0 0 48 48"><g fill="#b4b9cf">${PH}/></g></svg>`,
+  dialing: `<svg viewBox="0 0 48 48"><circle class="ring2" cx="24" cy="24" r="9"/><circle class="ring2" cx="24" cy="24" r="9" style="animation-delay:.8s"/><g fill="#6a5cff">${PH}/></g></svg>`,
+  in_call: `<svg viewBox="0 0 48 48">${[8, 14, 20, 26, 32].map((x, i) => `<rect class="bar" x="${x}" y="${24 - [6, 13, 18, 10, 5][i]}" width="4" height="${[12, 26, 36, 20, 10][i]}" rx="2" style="animation-delay:${i * .12}s"/>`).join("")}</svg>`,
+  analyzing: `<svg viewBox="0 0 48 48"><rect x="13" y="9" width="22" height="30" rx="4" fill="#fff" stroke="#6a5cff" stroke-width="2"/><path d="M18 18h12M18 24h12M18 30h7" stroke="#b4b9cf" stroke-width="2" stroke-linecap="round"/><g class="spin"><path d="M24 3a21 21 0 0 1 21 21" fill="none" stroke="#22c1c3" stroke-width="3" stroke-linecap="round"/></g></svg>`,
+  retrying: `<svg viewBox="0 0 48 48"><g class="spin"><path d="M38 24a14 14 0 1 1-4.5-10.3" fill="none" stroke="#c27a00" stroke-width="3" stroke-linecap="round"/><path d="M36 6v8h-8" fill="none" stroke="#c27a00" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g></svg>`,
+  ok: `<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="18" fill="#1a9e5c"/><path d="M15 24.5l6.5 6.5L33 18" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  no_room: `<svg viewBox="0 0 48 48"><rect x="8" y="22" width="32" height="12" rx="3" fill="#b4b9cf"/><rect x="11" y="16" width="12" height="8" rx="2" fill="#cdd1e3"/><path d="M8 38V16M40 38V28" stroke="#b4b9cf" stroke-width="3" stroke-linecap="round"/><path d="M10 10l28 28" stroke="#d6453d" stroke-width="3.5" stroke-linecap="round"/></svg>`,
+  failed: `<svg viewBox="0 0 48 48"><path d="M10 34a20 20 0 0 1 28 0M16 28a12 12 0 0 1 16 0" fill="none" stroke="#d6453d" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="24" cy="38" r="2.5" fill="#d6453d"/><path d="M12 8l24 24" stroke="#d6453d" stroke-width="3.5" stroke-linecap="round"/></svg>`,
 };
 
-$("edit").onclick = () => { $("confirm").hidden = true; $("ask").hidden = false; };
-
-$("start").onclick = async () => {
-  $("startErr").hidden = true; $("start").disabled = true;
-  const { data } = await post("/api/jobs", { email, ...parsed, query });
-  $("start").disabled = false;
-  if (!data.ok) return say($("startErr"), data.message || "Couldn't start the search.", true);
-  $("confirm").hidden = true; $("progress").hidden = false;
-  resetProgress();
-  poll(data.job_id);
-};
-
-const PHASES = [["searching", "Searching"], ["calling", "Calling"], ["emailing", "Emailing"], ["done", "Done"]];
-const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-let cards = new Map(), slots = new Map(), shown = {};
-
-function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
-}
-
-function resetProgress() {
-  cards = new Map(); slots = new Map(); shown = {};
-  $("grid").replaceChildren(); $("steps").replaceChildren(); $("counts").textContent = "";
-  for (const id of ["result", "best", "again", "allbox", "rejbox"]) $(id).hidden = true;
-  $("badge") && $("badge").remove();
-  $("stepper").replaceChildren(...PHASES.map(([k, t]) => { const li = el("li", "", t); li.dataset.k = k; return li; }));
-}
-
-function counter(span, to) {
-  const from = +span.dataset.v || 0;
-  span.dataset.v = to;
-  if (reduce || from === to) { span.textContent = to; return; }
-  const t0 = performance.now();
-  const step = (t) => {
-    const f = Math.min(1, (t - t0) / 500);
-    span.textContent = Math.round(from + (to - from) * f);
-    if (f < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
-function renderCounts(j) {
-  const box = $("counts");
-  if (!j.search_total && j.phase === "searching") { box.textContent = "Searching Google Hotels…"; return; }
-  if (!box.firstChild || !box.querySelector("[data-n]")) {
-    const mk = (id) => { const s = el("span"); s.dataset.n = id; return s; };
-    box.replaceChildren("Found ", mk("t"), " stays with phones · ", mk("v"), " passed validation");
-    box.append(el("span", "", ""));
-    box.lastChild.dataset.n = "tail";
-  }
-  counter(box.querySelector('[data-n="t"]'), j.search_total);
-  const v = box.querySelector('[data-n="v"]');
-  if (j.phase === "searching") { v.textContent = "…"; v.dataset.v = 0; }
-  else counter(v, j.validated_total);
-  const calls = Math.min(10, j.validated_total);
-  box.querySelector('[data-n="tail"]').textContent = j.phase === "searching" || j.phase === "validating" ? "" : ` · ${j.live ? "calling" : "simulating calls to"} the ${calls} cheapest`;
-}
-
+const CHIP = { queued: "Queued", dialing: "Dialing…", in_call: "On the call", analyzing: "Analyzing", retrying: "Retrying", no_room: "Sold out", failed: "Failed" };
 function chipText(a) {
-  switch (a.state) {
-    case "queued": return "Queued";
-    case "dialing": return "Dialing…";
-    case "in_call": return "On the call";
-    case "analyzing": return "Analyzing";
-    case "retrying": return "Retry 1/1";
-    case "no_room": return "Sold out";
-    case "failed": return "Failed";
-    case "ok": {
-      const r = a.result || {};
-      return (r.total_price != null ? money(r.total_price, parsed && parsed.currency) : "Available") + (r.room_type ? " · " + r.room_type : "");
-    }
+  if (a.state !== "ok") return CHIP[a.state] || a.state;
+  const r = a.result || {};
+  return (r.total_price != null ? money(r.total_price, parsed && parsed.currency) : "Available") + (r.room_type ? " · " + r.room_type : "");
+}
+function noteText(a) {
+  if (a.state === "failed") return a.replaced_by ? "Failed — replaced by " + a.replaced_by : "Failed — " + (a.message || "no answer");
+  if (a.state === "retrying") return a.message || "No answer, trying once more";
+  if (a.replacement_for) return "Replacing " + a.replacement_for;
+  if ((a.state === "ok" || a.state === "no_room") && a.attempt > 1) return "Connected on retry";
+  return a.address || "";
+}
+
+function renderCalls(j) {
+  const s = stage("calls", "2 · Calling hotels", callArt());
+  if (!s._.list) {
+    s._.best = el("div", "best"); s._.best.hidden = true;
+    s._.list = el("div", "calls");
+    s._.extra.append(s._.best, s._.list);
   }
-  return a.state;
-}
-
-function buildCard(a) {
-  const c = el("div", "hc");
-  const rank = el("div", "rank");
-  const body = el("div", "nm"), ad = el("div", "ad"), meta = el("div", "meta"), note = el("div", "note");
-  const left = el("div"), tag = el("span", "tag"), pr = el("span", "pr");
-  left.append(tag, pr);
-  const chip = el("span", "chip"), ind = el("span", "ind");
-  ind.append(el("i"), el("i"), el("i"));
-  const lab = el("span");
-  chip.append(ind, lab);
-  meta.append(left, chip);
-  c.append(rank, body, ad, meta, note);
-  c._p = { rank, body, ad, tag, pr, lab, note };
-  return c;
-}
-
-function updateCard(c, a, repl) {
-  const p = c._p;
-  c.className = "hc s-" + a.state + (a.state === "failed" && a.replaced_by ? " replaced" : "");
-  p.rank.textContent = a.slot + 1;
-  p.body.textContent = a.name;
-  p.ad.textContent = a.address || "";
-  p.pr.textContent = a.listed_price ? "Listed " + a.listed_price : "";
-  p.tag.textContent = a.replacement_for ? "Replacement · " : "";
-  p.lab.textContent = chipText(a);
-  let note = "";
-  if (a.state === "failed") note = a.replaced_by ? "Failed — replaced by " + a.replaced_by : "Failed — " + (a.message || "no answer");
-  else if (a.state === "ok" || a.state === "no_room") note = a.attempt > 1 ? "Connected on retry" : "";
-  else if (a.state === "retrying") note = a.message || "";
-  else if (a.replacement_for) note = "Replacing " + a.replacement_for;
-  p.note.textContent = note;
-}
-
-function renderAgents(j) {
+  // hero: live tally across all parallel calls
+  const cnt = (st) => j.agents.filter((x) => x.state === st).length;
+  const live = cnt("in_call"), ring = cnt("dialing") + cnt("retrying"), think = cnt("analyzing");
+  if (j.phase === "calling") {
+    const active = live + ring + think, waiting = cnt("queued");
+    const settled = j.agents.length && j.agents.every((x) => ["ok", "no_room", "failed"].includes(x.state));
+    const title = active ? `${active} call${active === 1 ? "" : "s"} live` : settled ? "All calls finished" : waiting ? "Warming up the phones" : "Finding hotels to call";
+    const subtitle = [live && `${live} on the line`, ring && `${ring} dialing`, think && `${think} analyzing`, waiting && `${waiting} queued`].filter(Boolean).join(" · ") || (settled ? "Picking the best price…" : "Calls start as soon as the first hotel passes checks");
+    s._.over.replaceChildren(el("div", "hero-name", title), el("div", "hero-sub", subtitle));
+  }
+  const n = j.agents.length, done = j.agents.filter((a) => ["ok", "no_room", "failed"].includes(a.state)).length;
+  s._.big.textContent = j.phase === "calling" ? `Calling ${n} hotel${n === 1 ? "" : "s"} at once` : `Called ${n} hotel${n === 1 ? "" : "s"}`;
+  s._.sub.textContent = `${done} of ${n} finished` + (j.live ? "" : " · simulated");
+  if (j.best) {
+    s._.best.hidden = false;
+    s._.best.textContent = `${j.status === "done" ? "Best price" : "Best so far"}: ${j.best.hotel} at ${money(j.best.price, parsed && parsed.currency)}${j.best.room ? " · " + j.best.room : ""}`;
+  }
   for (const a of j.agents) {
-    let c = cards.get(a.hotel_index);
-    if (!c) {
-      c = buildCard(a);
-      cards.set(a.hotel_index, c);
-      let g = slots.get(a.slot);
-      if (!g) {
-        g = el("div", "slot"); slots.set(a.slot, g);
-        const next = [...slots.keys()].filter((k) => k > a.slot).sort((x, y) => x - y)[0];
-        $("grid").insertBefore(g, next != null ? slots.get(next) : null);
-      }
-      g.append(c);
+    let r = rows.get(a.hotel_index);
+    if (!r) {
+      r = el("div", "row");
+      const ico = el("div", "ico"), mid = el("div", "mid"), nm = el("div", "nm"), nt = el("div", "nt"), chip = el("span", "chip"), dot = el("span", "dot"), lab = el("span");
+      chip.append(dot, lab); mid.append(nm, nt, chip); r.append(ico, mid);
+      r._ = { ico, nm, nt, lab, state: "", slot: a.slot }; rows.set(a.hotel_index, r);
+      const next = [...rows.values()].find((x) => x !== r && x._.slot > a.slot);
+      s._.list.insertBefore(r, next || null);
+      toBottom();
     }
-    updateCard(c, a);
+    r.className = "row s-" + a.state;
+    if (r._.state !== a.state) { r._.state = a.state; r._.ico.innerHTML = MINI[a.state] || MINI.queued; }
+    r._.nm.textContent = `#${a.slot + 1} ${a.name}`; r._.nt.textContent = noteText(a) || "\u00a0"; r._.lab.textContent = chipText(a);
   }
+  if (j.phase !== "calling" && j.phase !== "searching" && j.phase !== "validating") { finish("calls"); s._.over.replaceChildren(el("div", "hero-name", "All calls complete"), el("div", "hero-sub", `${cnt("ok")} with a price · ${cnt("no_room")} sold out · ${cnt("failed")} failed`)); }
 }
 
-function renderBest(j) {
-  const b = $("best");
-  if (!j.best) { b.hidden = true; return; }
-  const txt = `${j.status === "done" || j.status === "failed" ? "Best price" : "Best so far"}: ${j.best.hotel} at ${money(j.best.price, parsed && parsed.currency)}${j.best.room ? " · " + j.best.room : ""}`;
-  if (b.textContent !== txt && !reduce) { b.classList.add("bump"); setTimeout(() => b.classList.remove("bump"), 300); }
-  b.textContent = txt; b.hidden = false;
+function renderStats(j, host) {
+  const m = j.metrics; if (!m) return;
+  const v = m.voice || {}, o = m.openai || {};
+  const items = [
+    [fmtDur(m.elapsed_s), "Total time"],
+    [m.first_quote_s != null ? fmtDur(m.first_quote_s) : "–", "First quote"],
+    [fmtTok(m.total_tokens), "Tokens"],
+    [fmtDur(v.seconds), `Phone time · ${v.calls || 0} calls`],
+  ];
+  const box = host.querySelector(".stats") || host.appendChild(el("div", "stats"));
+  box.title = `Tokens: ${o.input + o.output} OpenAI (parse + review) · ${v.input + v.cached + v.output} voice agent` + (v.cost_usd ? ` · voice cost $${v.cost_usd}` : "");
+  box.replaceChildren(...items.map(([a, b]) => { const d = el("div", "stat"); d.append(el("b", "", a), el("span", "", b)); return d; }));
 }
 
-function renderLists(j) {
-  const fill = (box, sum, list, items, label, extra) => {
-    const key = label + items.length;
-    if (!items.length) { box.hidden = true; return; }
-    box.hidden = false; sum.textContent = `${label} (${items.length})`;
-    if (shown[label] === key) return;
-    shown[label] = key;
-    list.replaceChildren(...items.map((r) => {
-      const d = el("div", "row2"), l = el("span", "", r.name + (r.address ? " · " + r.address : "")), rr = el("span", "", extra(r));
-      d.append(l, rr); return d;
-    }));
-  };
-  fill($("allbox"), $("allsum"), $("alllist"), j.results, "Search results (all " + j.results.length + ")", (r) => r.listed_price || "");
-  $("allsum").textContent = `Search results (all ${j.results.length})`;
-  fill($("rejbox"), $("rejsum"), $("rejlist"), j.rejected_items, "Rejected", (r) => r.reason);
+function renderClock(j) {
+  const c = $("clock"), m = j.metrics;
+  if (!m) return;
+  c.hidden = false; c.textContent = "⏱ " + fmtDur(m.elapsed_s);
 }
 
-function renderPhase(j) {
-  const idx = PHASES.findIndex(([k]) => k === j.phase);
-  const finished = j.status === "done" || j.status === "failed";
-  [...$("stepper").children].forEach((li, n) => {
-    li.className = finished || n < idx ? "done" : n === idx ? "current" : "";
-  });
+function renderEmail(j, finished) {
+  const s = stage("email", "3 · Sending the details", mailArt());
+  if (finished) {
+    finish("email");
+    s._.big.textContent = j.status === "failed" ? "Couldn't finish" : "Done";
+    s._.sub.textContent = ""; s._.extra.replaceChildren(el("div", "result", j.summary || ""));
+    renderStats(j, s._.extra);
+    s._.over.replaceChildren();
+  } else {
+    s._.big.textContent = "Emailing the best deal";
+    s._.sub.textContent = "Sending to " + email;
+  }
 }
 
 function poll(id) {
   fetch("/api/jobs/" + id).then((r) => r.json()).then((j) => {
-    if (!j.steps) { say($("result"), j.message || "I can't find that search.", true); $("result").hidden = false; $("again").hidden = false; return; }
-    renderPhase(j); renderCounts(j); renderAgents(j); renderBest(j); renderLists(j);
-    $("steps").replaceChildren(...j.steps.map((s, n) => {
-      const li = document.createElement("li");
-      li.textContent = s;
-      if (j.status === "running" && n === j.steps.length - 1) li.className = "active";
-      return li;
-    }));
-    if (!j.live && !$("badge")) {
-      const b = el("span", "badge", "Demo mode · simulated calls"); b.id = "badge"; $("counts").after(b);
-    }
-    if (j.status === "done" || j.status === "failed") {
-      $("result").textContent = j.summary; $("result").hidden = false; $("again").hidden = false;
-      return;
+    if (!j.steps) { bot(j.message || "I can't find that search.", true); setBusy(false); return; }
+    const idx = PHASE_ORDER.indexOf(j.phase), finished = j.status === "done" || j.status === "failed";
+    renderSearch(j);
+    if (idx >= PHASE_ORDER.indexOf("calling") || j.agents.length) { finish("search"); renderCalls(j); }
+    if (idx >= PHASE_ORDER.indexOf("emailing") || finished) renderEmail(j, finished);
+    renderClock(j);
+    if (!j.live) $("demo").hidden = false;
+    if (finished) {
+      if (j.status === "failed" && !stages.email) bot(j.summary || "The search failed.", true);
+      setBusy(false); return;
     }
     pollTimer = setTimeout(() => poll(id), 1000);
   }).catch(() => { pollTimer = setTimeout(() => poll(id), 3000); });
 }
-
-$("again").onclick = () => {
-  clearTimeout(pollTimer);
-  $("progress").hidden = true; $("ask").hidden = false; $("reply").hidden = true; $("msg").value = "";
-};
 </script>
 </body>
 </html>

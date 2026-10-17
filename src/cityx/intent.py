@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
+from .metrics import Usage
 
 OPENAI_CHAT = "https://api.openai.com/v1/chat/completions"
 MAX_NIGHTS = 30
@@ -58,12 +59,12 @@ class IntentUnavailable(RuntimeError):
     """The language model could not be reached or returned something unusable."""
 
 
-def parse_intent(text: str, settings: Settings, today: date | None = None) -> Intent:
+def parse_intent(text: str, settings: Settings, today: date | None = None, usage: Usage | None = None) -> Intent:
     today = today or datetime.now().date()
-    return validate(_extract(text, settings, today), settings, today)
+    return validate(_extract(text, settings, today, usage), settings, today)
 
 
-def _extract(text: str, settings: Settings, today: date) -> dict[str, Any]:
+def _extract(text: str, settings: Settings, today: date, usage: Usage | None = None) -> dict[str, Any]:
     if not settings.openai_api_key:
         raise IntentUnavailable("OPENAI_API_KEY is not set")
     system = (
@@ -96,7 +97,10 @@ def _extract(text: str, settings: Settings, today: date) -> dict[str, Any]:
             timeout=20,
         )
         r.raise_for_status()
-        return json.loads(r.json()["choices"][0]["message"]["content"])
+        body = r.json()
+        if usage:
+            usage.add_openai(body)
+        return json.loads(body["choices"][0]["message"]["content"])
     except (httpx.HTTPError, KeyError, ValueError) as e:
         raise IntentUnavailable(str(e)) from e
 

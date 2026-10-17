@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: cityx
+    runtime: python
+    plan: starter
+    region: oregon
+    buildCommand: pip install .
+    startCommand: cityx serve --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: LIVE_CALLS
+        value: "1"
+      - key: TEAM_NUMBER
+        value: "8"
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SEARCHAPI_API_KEY
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false

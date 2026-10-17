@@ -7,12 +7,14 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any, Callable
 
 import httpx
 
 from .config import Settings
 from .intent import OPENAI_CHAT, Intent
+from .metrics import Usage
 from .deals import proximity_order
 from .search import _digits_phone
 
@@ -57,12 +59,13 @@ def validate_hotels(
     query: str = "",
     review: Reviewer | None = None,
     on_progress: Callable[[str], None] | None = None,
+    usage: Usage | None = None,
 ) -> ValidationReport:
     say = on_progress or (lambda _m: None)
     survivors, rejected = deterministic_filter(rows, intent)
     if survivors and (review or settings.openai_api_key):
         try:
-            survivors, llm_rejected = _llm_filter(survivors, intent, settings, query, review or _openai_review)
+            survivors, llm_rejected = _llm_filter(survivors, intent, settings, query, review or partial(_openai_review, usage=usage))
             rejected += llm_rejected
         except Exception as e:  # never fail the job over the review
             say(f"AI review skipped ({e}); using basic checks only")
@@ -119,7 +122,9 @@ def _llm_filter(survivors, intent, settings, query, review) -> tuple[list[dict],
     return kept + survivors[MAX_LLM_CANDIDATES:], rejected
 
 
-def _openai_review(query: str, intent: Intent, candidates: list[dict], settings: Settings) -> list[dict]:
+def _openai_review(
+    query: str, intent: Intent, candidates: list[dict], settings: Settings, usage: Usage | None = None
+) -> list[dict]:
     system = (
         "You check hotel search results against what the user asked for. For each numbered candidate "
         "decide keep=true or keep=false. Reject only candidates that clearly do not match: not a hotel or "
@@ -143,7 +148,10 @@ def _openai_review(query: str, intent: Intent, candidates: list[dict], settings:
         timeout=40,
     )
     r.raise_for_status()
-    return json.loads(r.json()["choices"][0]["message"]["content"])["decisions"]
+    body = r.json()
+    if usage:
+        usage.add_openai(body)
+    return json.loads(body["choices"][0]["message"]["content"])["decisions"]
 
 
 def _synth_query(i: Intent) -> str:

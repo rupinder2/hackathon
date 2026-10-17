@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from .config import Settings
 from .intent import EXAMPLE, Intent, IntentUnavailable, parse_intent, validate
+from .metrics import Usage
 from .pipeline import Job, run_job
 from .validate_results import _synth_query
 
@@ -22,6 +23,7 @@ app = FastAPI(title="cityx")
 settings = Settings()
 jobs: dict[str, Job] = {}
 jobs_lock = threading.Lock()
+parse_usage: dict[str, Usage] = {}  # tokens spent parsing a request, handed to the job that follows
 
 
 class ParseRequest(BaseModel):
@@ -71,7 +73,9 @@ def parse(req: ParseRequest) -> JSONResponse:
     if not req.message.strip():
         return JSONResponse({"ok": False, "message": f"Tell me where and when you want to stay. {EXAMPLE}"})
     try:
-        intent = parse_intent(req.message, settings)
+        usage = Usage()
+        intent = parse_intent(req.message, settings, usage=usage)
+        parse_usage[req.email.strip()] = usage
     except IntentUnavailable:
         return JSONResponse(
             {"ok": False, "message": "I'm having a little trouble understanding right now. Please try again in a moment."},
@@ -108,7 +112,10 @@ def start_job(req: JobRequest) -> JSONResponse:
             )
         if len(active) >= MAX_RUNNING:
             return JSONResponse({"ok": False, "message": "I'm busy with a few searches right now. Try again shortly."})
-        job = Job(email=email, intent=intent, query=req.query.strip()[:1000] or _synth_query(intent))
+        job = Job(
+            email=email, intent=intent, query=req.query.strip()[:1000] or _synth_query(intent),
+            usage=parse_usage.pop(email, None) or Usage(),
+        )
         jobs[job.id] = job
     threading.Thread(target=run_job, args=(job, settings), daemon=True).start()
     return JSONResponse({"ok": True, "job_id": job.id})
